@@ -169,9 +169,18 @@ async function handleGreroll(client: Client, message: Message): Promise<void> {
   }
   const args = message.content.trim().split(/\s+/).slice(1);
   if (!args[0]) {
-    await message.reply("❌ Usage: `!greroll <message_id>`");
+    await message.reply("❌ Usage: `!greroll <message_id> [amount]`");
     return;
   }
-  const result = await rerollGiveaway(client, args[0]);
+  let winnerOverride: number | undefined;
+  if (args[1]) {
+    const n = parseInt(args[1]);
+    if (isNaN(n) || n < 1 || n > 20) {
+      await message.reply("❌ Amount must be a number between 1 and 20.");
+      return;
+    }
+    winnerOverride = n;
+  }
+  const result = await rerollGiveaway(client, args[0], winnerOverride);
   if (!result.success) await message.reply(`❌ ${result.message}`);
 }

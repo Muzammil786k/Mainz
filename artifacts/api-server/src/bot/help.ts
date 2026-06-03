@@ -18,7 +18,7 @@ function page1(): EmbedBuilder {
     .addFields(
       { name: "`!gstart <duration> [winners] <prize>`", value: "Start a giveaway.\n**Example:** `!gstart 1d 2 Nitro`\n**Durations:** `30s` `5m` `2h` `1d`" },
       { name: "`!gend <message_id>`", value: "End a running giveaway early." },
-      { name: "`!greroll <message_id>`", value: "Reroll winner(s) of an ended giveaway." },
+      { name: "`!greroll <message_id> [amount]`", value: "Reroll winner(s) of an ended giveaway. Optionally specify how many winners to reroll." },
       { name: "`!help`", value: "Show this help menu." },
     )
     .setFooter({ text: "Page 1 of 5 • Use buttons to navigate" });

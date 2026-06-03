@@ -117,12 +117,15 @@ export async function endGiveaway(client: Client, messageId: string): Promise<{ 
   return { success: true, message: `Giveaway ended. Winners: ${giveaway.winners.map((id) => `<@${id}>`).join(", ") || "None"}` };
 }
 
-export async function rerollGiveaway(client: Client, messageId: string): Promise<{ success: boolean; message: string }> {
+export async function rerollGiveaway(client: Client, messageId: string, winnerOverride?: number): Promise<{ success: boolean; message: string }> {
   const giveaway = giveaways.get(messageId);
   if (!giveaway) return { success: false, message: "Giveaway not found." };
   if (!giveaway.ended) return { success: false, message: "Giveaway has not ended yet." };
 
+  const originalCount = giveaway.winnerCount;
+  if (winnerOverride !== undefined) giveaway.winnerCount = winnerOverride;
   giveaway.winners = await pickWinners(giveaway);
+  giveaway.winnerCount = originalCount;
 
   try {
     const guild = await client.guilds.fetch(giveaway.guildId);
