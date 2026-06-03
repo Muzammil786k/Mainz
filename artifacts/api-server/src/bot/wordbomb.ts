@@ -1,0 +1,370 @@
+import {
+  EmbedBuilder,
+  PermissionFlagsBits,
+  type Client,
+  type Message,
+  type TextChannel,
+} from "discord.js";
+import { createRequire } from "node:module";
+
+const _require = createRequire(import.meta.url);
+const _wordList: string[] = _require("an-array-of-english-words");
+
+// ─── Word Dictionary ───────────────────────────────────────────────────────────
+
+const WORD_SET = new Set<string>(_wordList.map((w) => w.toLowerCase()));
+
+function isRealWord(word: string): boolean {
+  return WORD_SET.has(word.toLowerCase());
+}
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const TRIGRAMS = [
+  "ize", "ous", "ing", "tion", "ack", "ell", "ill", "ull",
+  "ang", "ong", "ung", "ant", "ent", "int", "ath", "oth",
+  "tra", "str", "the", "her", "ere", "and", "for", "not",
+  "can", "had", "how", "man", "new", "now", "old", "our",
+  "out", "own", "say", "she", "two", "way", "who", "got",
+  "let", "put", "ask", "big", "day", "get", "has", "its",
+  "may", "off", "run", "set", "sit", "try", "war", "ale",
+  "are", "ate", "eve", "ice", "ire", "ore", "use", "ble",
+  "ple", "tle", "gle", "nce", "nse", "eck", "ick", "ock",
+  "uck", "ead", "eal", "eat", "eed", "een", "eep", "eer",
+  "eet", "end", "est", "ide", "igh", "ind", "ine", "ink",
+  "ion", "ish", "ite", "ive", "oak", "oal",
+];
+
+const LIVES = 2;
+const LOBBY_TIME = 30_000;
+const TURN_TIME = 10_000;
+const EMBED_COLOR = 0xff0000;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// ─── State ────────────────────────────────────────────────────────────────────
+
+interface GameState {
+  activePlayers: string[];
+  allPlayers: string[];
+  lives: Map<string, number>;
+  scores: Map<string, number>;
+  eliminated: Set<string>;
+  usedWords: Set<string>;
+  currentIndex: number;
+  active: boolean;
+}
+
+const activeGames = new Map<string, GameState>();
+const winsLeaderboard = new Map<string, Map<string, number>>();
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function randTrigram(): string {
+  return TRIGRAMS[Math.floor(Math.random() * TRIGRAMS.length)];
+}
+
+function livesBar(lives: number): string {
+  return "❤️".repeat(Math.max(0, lives)) + "🖤".repeat(Math.max(0, LIVES - lives));
+}
+
+function addWin(guildId: string, userId: string): void {
+  if (!winsLeaderboard.has(guildId)) winsLeaderboard.set(guildId, new Map());
+  const g = winsLeaderboard.get(guildId)!;
+  g.set(userId, (g.get(userId) ?? 0) + 1);
+}
+
+async function getDisplayName(channel: TextChannel, userId: string): Promise<string> {
+  try {
+    const member = await channel.guild.members.fetch(userId);
+    return member.displayName;
+  } catch {
+    return `<@${userId}>`;
+  }
+}
+
+// ─── Turn ─────────────────────────────────────────────────────────────────────
+
+async function runTurn(
+  channel: TextChannel,
+  state: GameState,
+  currentId: string,
+  trigram: string
+): Promise<boolean> {
+  let resolved = false;
+
+  await channel.send({
+    content: `<@${currentId}>`,
+    embeds: [
+      new EmbedBuilder()
+        .setColor(EMBED_COLOR)
+        .setDescription(`☕ Type a word containing the letters: **${trigram.toUpperCase()}**.`),
+    ],
+  });
+
+  const answered = await new Promise<boolean>((resolve) => {
+    const hardTimer = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        collector.stop("timeout");
+        resolve(false);
+      }
+    }, TURN_TIME);
+
+    const collector = channel.createMessageCollector({
+      filter: (m) => m.author.id === currentId && !m.author.bot,
+      time: TURN_TIME,
+    });
+
+    collector.on("collect", async (m) => {
+      const word = m.content.trim().toLowerCase();
+
+      if (!/^[a-z]+$/.test(word)) return;
+
+      if (!word.includes(trigram.toLowerCase())) {
+        await m.react("❌").catch(() => {});
+        await m.reply(`❌ **${word}** doesn't contain **\`${trigram.toUpperCase()}\`**!`).catch(() => {});
+        return;
+      }
+
+      if (!isRealWord(word)) {
+        await m.react("❌").catch(() => {});
+        return;
+      }
+
+      if (state.usedWords.has(word)) {
+        await m.react("❌").catch(() => {});
+        return;
+      }
+
+      state.usedWords.add(word);
+      resolved = true;
+      clearTimeout(hardTimer);
+      collector.stop("answered");
+
+      await m.react("✅").catch(() => {});
+      resolve(true);
+    });
+
+    collector.on("end", (_c, _reason) => {
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(hardTimer);
+        resolve(false);
+      }
+    });
+  });
+
+  return answered;
+}
+
+// ─── Main game loop ───────────────────────────────────────────────────────────
+
+async function runGame(channel: TextChannel, state: GameState, guildId: string): Promise<void> {
+  while (state.active) {
+    state.activePlayers = state.activePlayers.filter((id) => (state.lives.get(id) ?? 0) > 0);
+
+    if (state.activePlayers.length < 2) {
+      const winnerId = state.activePlayers[0];
+
+      if (winnerId) {
+        addWin(guildId, winnerId);
+        const name = await getDisplayName(channel, winnerId);
+        await channel.send({
+          embeds: [
+            new EmbedBuilder()
+              .setColor(EMBED_COLOR)
+              .setDescription(`🏆 **${name}** has won the game! 🏆`),
+          ],
+        });
+      } else {
+        await channel.send({
+          embeds: [
+            new EmbedBuilder()
+              .setColor(EMBED_COLOR)
+              .setDescription("💀 Everyone was eliminated! No winner."),
+          ],
+        });
+      }
+
+      state.active = false;
+      activeGames.delete(guildId);
+      return;
+    }
+
+    if (state.currentIndex >= state.activePlayers.length) state.currentIndex = 0;
+
+    const currentId = state.activePlayers[state.currentIndex];
+    const trigram = randTrigram();
+
+    const answered = await runTurn(channel, state, currentId, trigram);
+
+    if (answered) {
+      state.scores.set(currentId, (state.scores.get(currentId) ?? 0) + 1);
+    } else {
+      const remaining = (state.lives.get(currentId) ?? 1) - 1;
+      state.lives.set(currentId, remaining);
+
+      if (remaining <= 0) {
+        state.eliminated.add(currentId);
+        const name = await getDisplayName(channel, currentId);
+        await channel.send({
+          embeds: [
+            new EmbedBuilder()
+              .setColor(EMBED_COLOR)
+              .setDescription(`🚪 **${name}** has been **eliminated**!`),
+          ],
+        });
+      } else {
+        await channel.send({
+          embeds: [
+            new EmbedBuilder()
+              .setColor(EMBED_COLOR)
+              .setDescription(`💥 <@${currentId}> lost a life! ${livesBar(remaining)}`),
+          ],
+        });
+      }
+    }
+
+    state.currentIndex = (state.currentIndex + 1) % state.activePlayers.length;
+    await sleep(1200);
+  }
+}
+
+// ─── Commands ─────────────────────────────────────────────────────────────────
+
+export async function handleWordbomb(client: Client, message: Message): Promise<void> {
+  if (!message.guild) return;
+  const guildId = message.guild.id;
+
+  if (activeGames.has(guildId)) {
+    await message.reply("❌ A Word Bomb game is already running in this server!");
+    return;
+  }
+
+  const channel = message.channel as TextChannel;
+
+  const lobbyMsg = await channel.send({
+    embeds: [
+      new EmbedBuilder()
+        .setColor(EMBED_COLOR)
+        .setDescription(
+          `⏰ Waiting for **players**, react with ✅ to join. The game will begin in **30** seconds.\n\n` +
+          `\`GOAL:\` You have **10** seconds to say a word containing the given group of **3** letters. ` +
+          `Failure to do so within the **10** seconds will lose a life. Each player has **${LIVES}** lives to begin with.\n\n` +
+          `\`NOTES:\` A word can only be used **once** through the course of the game.`
+        ),
+    ],
+  });
+
+  await lobbyMsg.react("✅");
+  await sleep(LOBBY_TIME);
+
+  const reaction = lobbyMsg.reactions.cache.get("✅");
+  const reactedUsers = reaction
+    ? [...(await reaction.users.fetch()).values()].filter((u) => !u.bot)
+    : [];
+
+  if (reactedUsers.length < 2) {
+    await channel.send({
+      embeds: [
+        new EmbedBuilder()
+          .setColor(EMBED_COLOR)
+          .setDescription("❌ Not enough players joined (need at least **2**). Game cancelled."),
+      ],
+    });
+    return;
+  }
+
+  const players = reactedUsers.map((u) => u.id);
+  const lives = new Map<string, number>(players.map((id) => [id, LIVES]));
+  const scores = new Map<string, number>(players.map((id) => [id, 0]));
+
+  const state: GameState = {
+    activePlayers: [...players],
+    allPlayers: [...players],
+    lives,
+    scores,
+    eliminated: new Set(),
+    usedWords: new Set(),
+    currentIndex: 0,
+    active: true,
+  };
+
+  activeGames.set(guildId, state);
+
+  const displayNames = new Map<string, string>();
+  for (const id of players) {
+    displayNames.set(id, await getDisplayName(channel, id));
+  }
+
+  const playerLines = players
+    .map((id) => `${livesBar(LIVES)} @${displayNames.get(id) ?? id}`)
+    .join("\n");
+
+  await channel.send({
+    embeds: [
+      new EmbedBuilder()
+        .setColor(EMBED_COLOR)
+        .setTitle("💣 Word Bomb — Starting!")
+        .setDescription(`**${players.length} players** are ready!\n\n${playerLines}`),
+    ],
+  });
+
+  await sleep(2000);
+  await runGame(channel, state, guildId);
+}
+
+export async function handleWordbombStop(message: Message): Promise<void> {
+  if (!message.guild) return;
+  const guildId = message.guild.id;
+
+  const member = message.guild.members.cache.get(message.author.id);
+  if (!member?.permissions.has(PermissionFlagsBits.ManageGuild)) {
+    await message.reply("❌ You need the **Manage Server** permission to stop a game.");
+    return;
+  }
+
+  const state = activeGames.get(guildId);
+  if (!state) {
+    await message.reply("❌ There is no active Word Bomb game to stop.");
+    return;
+  }
+
+  state.active = false;
+  activeGames.delete(guildId);
+  await message.reply({
+    embeds: [
+      new EmbedBuilder()
+        .setColor(EMBED_COLOR)
+        .setDescription("🛑 The Word Bomb game has been **stopped** by a moderator."),
+    ],
+  });
+}
+
+export async function handleWbTop(message: Message): Promise<void> {
+  if (!message.guild) return;
+  const guildId = message.guild.id;
+
+  const guildWins = winsLeaderboard.get(guildId);
+  if (!guildWins || guildWins.size === 0) {
+    await message.reply("📊 No Word Bomb games have been won yet in this server!");
+    return;
+  }
+
+  const sorted = [...guildWins.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10);
+  const medals = ["🥇", "🥈", "🥉"];
+  const lines = sorted.map(([userId, wins], i) => {
+    const medal = medals[i] ?? `**${i + 1}.**`;
+    return `${medal} <@${userId}> — **${wins}** win${wins !== 1 ? "s" : ""}`;
+  });
+
+  await message.reply({
+    embeds: [
+      new EmbedBuilder()
+        .setColor(EMBED_COLOR)
+        .setTitle("🏆 Word Bomb — Leaderboard")
+        .setDescription(lines.join("\n"))
+        .setFooter({ text: "Most Word Bomb wins in this server" }),
+    ],
+  });
+}
