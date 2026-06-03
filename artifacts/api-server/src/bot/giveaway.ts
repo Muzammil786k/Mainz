@@ -75,7 +75,8 @@ export async function pickWinners(giveaway: Giveaway): Promise<string[]> {
   if (pool.length === 0) return [];
   const winners: string[] = [];
   const available = [...pool];
-  for (let i = 0; i < Math.min(giveaway.winnerCount, available.length); i++) {
+  const count = Math.min(giveaway.winnerCount, available.length);
+  for (let i = 0; i < count; i++) {
     const idx = Math.floor(Math.random() * available.length);
     winners.push(available.splice(idx, 1)[0]);
   }
