@@ -158,7 +158,7 @@ async function handleGend(client: Client, message: Message): Promise<void> {
     return;
   }
   const result = await endGiveaway(client, args[0]);
-  await message.reply(result.success ? `✅ ${result.message}` : `❌ ${result.message}`);
+  if (!result.success) await message.reply(`❌ ${result.message}`);
 }
 
 async function handleGreroll(client: Client, message: Message): Promise<void> {
