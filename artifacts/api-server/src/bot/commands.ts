@@ -22,11 +22,11 @@ export async function handleMessage(client: Client, message: Message): Promise<v
   if (message.author.bot) return;
   if (!message.guild) return;
 
-  await handleAfk(message);
-
   const raw = message.content.trim();
   const noPrefix = hasNoPrefix(message);
   const content = (!raw.startsWith("!") && noPrefix) ? `!${raw}` : raw;
+
+  await handleAfk(message, content);
 
   if (!content.startsWith("!") && !noPrefix) return;
 

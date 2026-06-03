@@ -24,7 +24,7 @@ function formatDuration(ms: number): string {
   return parts.slice(0, -1).join(", ") + " and " + parts[parts.length - 1];
 }
 
-export async function handleAfk(message: Message): Promise<void> {
+export async function handleAfk(message: Message, transformedContent?: string): Promise<void> {
   const userId = message.author.id;
 
   if (afkUsers.has(userId)) {
@@ -42,13 +42,13 @@ export async function handleAfk(message: Message): Promise<void> {
     return;
   }
 
-  const content = message.content.trim();
+  const content = (transformedContent ?? message.content).trim();
   const isAfkCommand =
     content.toLowerCase() === "!afk" ||
     content.toLowerCase().startsWith("!afk ");
 
   if (isAfkCommand) {
-    const status = content.slice(4).trim() || "AFK";
+    const status = content.slice(4).trim() || "AFK"; // slice past "!afk"
     afkUsers.set(userId, { status, since: Date.now() });
     await message.reply({
       embeds: [
