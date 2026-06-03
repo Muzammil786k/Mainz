@@ -129,7 +129,7 @@ export async function rerollGiveaway(client: Client, messageId: string): Promise
 
     if (giveaway.winners.length > 0) {
       await channel.send(
-        `🎉 New winner(s) for **${giveaway.prize}**: ${giveaway.winners.map((id) => `<@${id}>`).join(", ")}!`
+        `🎉 Congratulations ${giveaway.winners.map((id) => `<@${id}>`).join(", ")}! You won **${giveaway.prize}**!`
       );
     } else {
       await channel.send(`No valid participants to reroll.`);
