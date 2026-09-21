@@ -1,0 +1,1 @@
+- [Railway monorepo startup](railway-monorepo-startup.md) — keep a root-level start script because Railpack may not apply nested service config reliably.
