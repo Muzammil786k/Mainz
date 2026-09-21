@@ -3,6 +3,7 @@ import {
   PermissionFlagsBits,
   type Message,
   type TextChannel,
+  type Client,
 } from "discord.js";
 
 const C = 0xff0000;
@@ -79,6 +80,136 @@ export async function handleServerInfo(message: Message): Promise<void> {
           { name: "Boost Level", value: `Level ${guild.premiumTier}`, inline: true },
         )
         .setFooter({ text: `Requested by ${message.author.username}` })
+        .setTimestamp(),
+    ],
+  });
+}
+
+// ─── Member Count ───────────────────────────────────────────────────────────────
+
+export async function handleMemberCount(message: Message): Promise<void> {
+  if (!message.guild) return;
+  const guild = message.guild;
+
+  await guild.members.fetch({ withPresences: true }).catch(() => {});
+
+  let online = 0;
+  let idle = 0;
+  let dnd = 0;
+  let offline = 0;
+  let humans = 0;
+  let bots = 0;
+
+  for (const member of guild.members.cache.values()) {
+    if (member.user.bot) bots++;
+    else humans++;
+
+    switch (member.presence?.status) {
+      case "online":
+        online++;
+        break;
+      case "idle":
+        idle++;
+        break;
+      case "dnd":
+        dnd++;
+        break;
+      default:
+        offline++;
+    }
+  }
+
+  const active = online + idle + dnd;
+  await message.reply({
+    embeds: [
+      new EmbedBuilder()
+        .setColor(0x5865f2)
+        .setTitle(`📊 Member Count — ${guild.name}`)
+        .setThumbnail(guild.iconURL({ size: 256 }) ?? null)
+        .addFields(
+          { name: "Total Members", value: `**${guild.memberCount}**`, inline: true },
+          { name: "Humans", value: `👤 **${humans}**`, inline: true },
+          { name: "Bots", value: `🤖 **${bots}**`, inline: true },
+          { name: "Online", value: `🟢 **${online}**`, inline: true },
+          { name: "Idle", value: `🟡 **${idle}**`, inline: true },
+          { name: "Do Not Disturb", value: `🔴 **${dnd}**`, inline: true },
+          { name: "Offline", value: `⚫ **${offline}**`, inline: true },
+          { name: "Active Now", value: `✨ **${active}**`, inline: true },
+        )
+        .setFooter({ text: "Presence counts require the Server Members and Presence intents." })
+        .setTimestamp(),
+    ],
+  });
+}
+
+// ─── Bot Info ───────────────────────────────────────────────────────────────────
+
+function formatDuration(milliseconds: number): string {
+  let seconds = Math.floor(milliseconds / 1000);
+  const days = Math.floor(seconds / 86400);
+  seconds %= 86400;
+  const hours = Math.floor(seconds / 3600);
+  seconds %= 3600;
+  const minutes = Math.floor(seconds / 60);
+  seconds %= 60;
+
+  return [
+    days > 0 ? `${days}d` : "",
+    hours > 0 ? `${hours}h` : "",
+    minutes > 0 ? `${minutes}m` : "",
+    `${seconds}s`,
+  ].filter(Boolean).join(" ");
+}
+
+export async function handlePing(client: Client, message: Message): Promise<void> {
+  await message.reply({
+    embeds: [
+      new EmbedBuilder()
+        .setColor(0x57f287)
+        .setTitle("🏓 Pong!")
+        .addFields(
+          { name: "WebSocket", value: `${client.ws.ping}ms`, inline: true },
+          { name: "Uptime", value: formatDuration(client.uptime ?? 0), inline: true },
+        )
+        .setTimestamp(),
+    ],
+  });
+}
+
+export async function handleBotInfo(client: Client, message: Message): Promise<void> {
+  const user = client.user;
+  await message.reply({
+    embeds: [
+      new EmbedBuilder()
+        .setColor(0x5865f2)
+        .setTitle("🤖 Bot Information")
+        .setThumbnail(user?.displayAvatarURL({ size: 256 }) ?? null)
+        .addFields(
+          { name: "Bot", value: user ? `${user} \`${user.tag}\`` : "Unknown", inline: false },
+          { name: "Servers", value: `${client.guilds.cache.size}`, inline: true },
+          { name: "Uptime", value: formatDuration(client.uptime ?? 0), inline: true },
+          { name: "WebSocket", value: `${client.ws.ping}ms`, inline: true },
+        )
+        .setFooter({ text: "HangoutSaiBot" })
+        .setTimestamp(),
+    ],
+  });
+}
+
+export async function handleChannelInfo(message: Message): Promise<void> {
+  if (!message.guild) return;
+  const channel = message.channel as TextChannel;
+  await message.reply({
+    embeds: [
+      new EmbedBuilder()
+        .setColor(0x5865f2)
+        .setTitle(`📺 Channel Information — #${channel.name}`)
+        .addFields(
+          { name: "Channel ID", value: channel.id, inline: true },
+          { name: "Type", value: String(channel.type), inline: true },
+          { name: "Category", value: channel.parent ? `<#${channel.parent.id}>` : "None", inline: true },
+          { name: "Created", value: channel.createdAt ? `<t:${Math.floor(channel.createdAt.getTime() / 1000)}:F>` : "Unknown", inline: false },
+        )
         .setTimestamp(),
     ],
   });

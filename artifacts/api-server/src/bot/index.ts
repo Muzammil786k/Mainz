@@ -6,6 +6,7 @@ import {
   type User,
 } from "discord.js";
 import { handleMessage } from "./commands";
+import { handleSlashCommand, registerSlashCommands } from "./slash";
 import { giveaways, buildGiveawayEmbed } from "./giveaway";
 import { logger } from "../lib/logger";
 
@@ -22,6 +23,7 @@ export function createBot(): Client {
       GatewayIntentBits.GuildMessages,
       GatewayIntentBits.MessageContent,
       GatewayIntentBits.GuildMembers,
+      GatewayIntentBits.GuildPresences,
       GatewayIntentBits.GuildMessageReactions,
     ],
     partials: [Partials.Message, Partials.Channel, Partials.Reaction],
@@ -29,7 +31,14 @@ export function createBot(): Client {
 
   client.once("ready", () => {
     logger.info({ tag: client.user?.tag }, "Discord bot is ready");
-    client.user?.setActivity("🎉 Giveaways | !ghelp");
+    client.user?.setActivity("🎉 Giveaways | !help | /help");
+    void registerSlashCommands(client);
+  });
+
+  client.on("guildCreate", (guild) => {
+    void registerSlashCommands(client).catch((err) => {
+      logger.error({ err, guildId: guild.id }, "Failed to register commands for new guild");
+    });
   });
 
   client.on("messageCreate", async (message) => {
@@ -38,6 +47,11 @@ export function createBot(): Client {
     } catch (err) {
       logger.error({ err }, "Error handling message");
     }
+  });
+
+  client.on("interactionCreate", async (interaction) => {
+    if (!interaction.isChatInputCommand()) return;
+    await handleSlashCommand(client, interaction);
   });
 
   client.on("messageReactionAdd", async (reaction: MessageReaction, user: User) => {

@@ -13,7 +13,18 @@ import { hasNoPrefix, handleNoPrefix } from "./noprefix";
 import { handleHelp } from "./help";
 import { startGiveaway, endGiveaway, rerollGiveaway, parseDuration } from "./giveaway";
 import { handleKick, handleBan, handleUnban, handleNuke, handleSlowmode, handleLock, handleUnlock } from "./moderation";
-import { handleUserInfo, handleServerInfo, handleAvatar, handleRole, handleNick, handleAnnounce } from "./utility";
+import {
+  handleUserInfo,
+  handleServerInfo,
+  handleAvatar,
+  handleRole,
+  handleNick,
+  handleAnnounce,
+  handleMemberCount,
+  handlePing,
+  handleBotInfo,
+  handleChannelInfo,
+} from "./utility";
 import { handleSetModlog, handleCaseLookup, handleCaseList } from "./cases";
 
 const PREFIX = "g";
@@ -89,6 +100,14 @@ export async function handleMessage(client: Client, message: Message): Promise<v
     await handleUserInfo(message);
   } else if (lower === "!serverinfo") {
     await handleServerInfo(message);
+  } else if (lower === "!mc" || lower === "!membercount") {
+    await handleMemberCount(message);
+  } else if (lower === "!ping") {
+    await handlePing(client, message);
+  } else if (lower === "!botinfo") {
+    await handleBotInfo(client, message);
+  } else if (lower === "!channelinfo") {
+    await handleChannelInfo(message);
   } else if (lower === "!avatar" || lower.startsWith("!avatar ")) {
     await handleAvatar(message);
   } else if (lower === "!role" || lower.startsWith("!role ")) {
