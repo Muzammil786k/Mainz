@@ -87,7 +87,7 @@ function page5(): EmbedBuilder {
     .setTitle("📖 Help — Page 5/5: 🎮 Fun & Games")
     .addFields(
       { name: "💣 **Word Bomb**", value: "\u200b" },
-      { name: "`!wordbomb` / `!wb` • `/wordbomb`", value: "Start a Word Bomb game. React ✅ to join.\n**10s** per turn, **2 lives** each. Real English words only!" },
+      { name: "`!wordbomb` / `!wb` • `/wordbomb`", value: "Start a Word Bomb game. React ✅ to join.\n**10s** per turn, **3 lives** each. Real English words only!" },
       { name: "`!wbstop` • `/wbstop`", value: "Stop the current Word Bomb game.\n*(Manage Server)*" },
       { name: "`!wbtop` • `/wbtop`", value: "Show the Word Bomb win leaderboard for this server." },
       { name: "✅ **Command notes**", value: "Slash commands appear server-by-server after the bot starts. Prefix commands continue to work as before.\n\nFor accurate online/offline presence counts, enable **Server Members Intent** and **Presence Intent** in the Discord Developer Portal." },

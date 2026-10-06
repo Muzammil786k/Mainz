@@ -35,7 +35,7 @@ const TRIGRAMS = [
   "ion", "ish", "ite", "ive", "oak", "oal",
 ];
 
-const LIVES = 2;
+const LIVES = 3;
 const LOBBY_TIME = 30_000;
 const TURN_TIME = 10_000;
 const EMBED_COLOR = 0xff0000;
