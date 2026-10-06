@@ -1,34 +1,32 @@
-import express, { type Express } from "express";
+import { createServer } from "node:http";
 import cors from "cors";
 import pinoHttp from "pino-http";
-import router from "./routes";
+import { handleApiRequest } from "./routes";
 import { logger } from "./lib/logger";
 
-const app: Express = express();
-
-app.use(
-  pinoHttp({
-    logger,
-    serializers: {
-      req(req) {
-        return {
-          id: req.id,
-          method: req.method,
-          url: req.url?.split("?")[0],
-        };
-      },
-      res(res) {
-        return {
-          statusCode: res.statusCode,
-        };
-      },
+const requestLogger = pinoHttp({
+  logger,
+  serializers: {
+    req(req) {
+      return {
+        id: req.id,
+        method: req.method,
+        url: req.url?.split("?")[0],
+      };
     },
-  }),
-);
-app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+    res(res) {
+      return {
+        statusCode: res.statusCode,
+      };
+    },
+  },
+});
+const corsMiddleware = cors();
 
-app.use("/api", router);
+const app = createServer((req, res) => {
+  requestLogger(req, res, () => {
+    corsMiddleware(req, res, () => handleApiRequest(req, res));
+  });
+});
 
 export default app;

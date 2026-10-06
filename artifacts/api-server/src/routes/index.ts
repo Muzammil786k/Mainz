@@ -1,8 +1,14 @@
-import { Router, type IRouter } from "express";
-import healthRouter from "./health";
+import type { IncomingMessage, ServerResponse } from "node:http";
+import { handleHealthCheck } from "./health";
 
-const router: IRouter = Router();
+export function handleApiRequest(req: IncomingMessage, res: ServerResponse): void {
+  const url = new URL(req.url ?? "/", "http://localhost");
 
-router.use(healthRouter);
+  if (req.method === "GET" && url.pathname === "/api/healthz") {
+    handleHealthCheck(res);
+    return;
+  }
 
-export default router;
+  res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+  res.end(`Cannot ${req.method ?? "GET"} ${url.pathname}`);
+}

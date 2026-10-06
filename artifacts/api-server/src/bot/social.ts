@@ -157,7 +157,7 @@ export const SOCIAL_ACTIONS = {
     gifCategory: "facepalm",
     render: (actor, target) => `${actor} facepalms at ${target}'s antics.`,
   },
-  kick: {
+  cartoonkick: {
     description: "Give a member a harmless cartoon kick.",
     title: "🦵 Cartoon kick!",
     help: "Give someone a harmless, cartoon-style kick.",
@@ -318,12 +318,7 @@ export async function handleSocialAction(message: Message, actionName: SocialAct
     .setDescription(
       `${action.render(`<@${message.author.id}>`, `<@${target.id}>`)}${gif ? "" : "\n\n🎞️ Anime GIF is temporarily unavailable."}`,
     )
-    .setFooter({
-      text: gif?.animeName
-        ? `${gif.animeName} • Anime GIFs via NEKOS.BEST`
-        : "Anime GIFs via NEKOS.BEST • Keep it friendly.",
-    })
-    .setTimestamp();
+    .setFooter({ text: "Just for fun — keep it friendly." });
 
   if (gif) embed.setImage(gif.url);
 
