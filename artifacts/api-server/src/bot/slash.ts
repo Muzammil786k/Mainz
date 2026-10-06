@@ -285,7 +285,11 @@ function createMessageAdapter(interaction: ChatInputCommandInteraction, content:
     member,
     mentions,
     reply: async (payload: unknown) => {
-      if (interaction.replied || interaction.deferred) {
+      if (interaction.deferred && !interaction.replied) {
+        await interaction.editReply(payload as never);
+        return interaction.fetchReply();
+      }
+      if (interaction.replied) {
         return interaction.followUp(payload as never);
       }
       await interaction.reply(payload as never);
@@ -313,12 +317,20 @@ export async function handleSlashCommand(client: Client, interaction: ChatInputC
   }
 
   try {
+    if (Object.hasOwn(SOCIAL_ACTIONS, interaction.commandName)) {
+      await interaction.deferReply();
+    }
+
     const content = buildLegacyContent(interaction);
     const message = createMessageAdapter(interaction, content);
     await handleMessage(client, message);
   } catch (err) {
     logger.error({ err, command: interaction.commandName }, "Error handling slash command");
-    if (interaction.replied || interaction.deferred) {
+    if (interaction.deferred && !interaction.replied) {
+      await interaction
+        .editReply({ content: "❌ Something went wrong while running that command." })
+        .catch(() => {});
+    } else if (interaction.replied) {
       await interaction.followUp({ content: "❌ Something went wrong while running that command.", ephemeral: true }).catch(() => {});
     } else {
       await interaction.reply({ content: "❌ Something went wrong while running that command.", ephemeral: true }).catch(() => {});
