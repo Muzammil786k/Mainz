@@ -26,6 +26,7 @@ import {
   handleChannelInfo,
 } from "./utility";
 import { handleSetModlog, handleCaseLookup, handleCaseList } from "./cases";
+import { handleSocialAction, SOCIAL_ACTIONS, type SocialActionName } from "./social";
 
 const PREFIX = "g";
 
@@ -124,6 +125,11 @@ export async function handleMessage(client: Client, message: Message): Promise<v
     await handleWordbombStop(message);
   } else if (lower === "!wbtop") {
     await handleWbTop(message);
+  } else {
+    const command = lower.match(/^!([a-z]+)(?:\s|$)/)?.[1] as SocialActionName | undefined;
+    if (command && Object.hasOwn(SOCIAL_ACTIONS, command)) {
+      await handleSocialAction(message, command);
+    }
   }
 }
 

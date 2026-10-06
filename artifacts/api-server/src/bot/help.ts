@@ -6,6 +6,7 @@ import {
   ComponentType,
   type Message,
 } from "discord.js";
+import { SOCIAL_ACTION_NAMES, SOCIAL_ACTIONS } from "./social";
 
 const C = 0x2b2d31;
 const TIMEOUT = 60_000;
@@ -13,7 +14,7 @@ const TIMEOUT = 60_000;
 function page1(): EmbedBuilder {
   return new EmbedBuilder()
     .setColor(C)
-    .setTitle("📖 Help — Page 1/5: Core & Giveaways")
+    .setTitle("📖 Help — Page 1/6: Core & Giveaways")
     .setDescription("Prefix commands and slash commands do the same thing.")
     .addFields(
       { name: "`!help` • `/help`", value: "Show this complete help menu." },
@@ -22,13 +23,13 @@ function page1(): EmbedBuilder {
       { name: "`!greroll <message_id> [amount]` • `/greroll`", value: "Reroll one or more winners from an ended giveaway.\n*(Manage Server)*" },
       { name: "`!afk [status]` • `/afk`", value: "Set your AFK status. Send any message to remove it." },
     )
-    .setFooter({ text: "Page 1 of 5 • Use buttons to navigate" });
+    .setFooter({ text: "Page 1 of 6 • Use buttons to navigate" });
 }
 
 function page2(): EmbedBuilder {
   return new EmbedBuilder()
     .setColor(C)
-    .setTitle("📖 Help — Page 2/5: 🛡️ Moderation")
+    .setTitle("📖 Help — Page 2/6: 🛡️ Moderation")
     .addFields(
       { name: "`!warn @user [reason]` • `/warn`", value: "Warn a member, send a DM, and log a case.\n*(Manage Server)*" },
       { name: "`!warnings @user` • `/warnings`", value: "View a member's warnings.\n*(Manage Server)*" },
@@ -45,13 +46,13 @@ function page2(): EmbedBuilder {
       { name: "`!purge <amount>` • `/purge`", value: "Delete 1–100 recent messages.\n*(Manage Messages)*" },
       { name: "`!pb [amount]` • `/pb`", value: "Delete recent bot messages.\n*(Manage Messages)*" },
     )
-    .setFooter({ text: "Page 2 of 5 • Use buttons to navigate" });
+    .setFooter({ text: "Page 2 of 6 • Use buttons to navigate" });
 }
 
 function page3(): EmbedBuilder {
   return new EmbedBuilder()
     .setColor(C)
-    .setTitle("📖 Help — Page 3/5: 📋 Cases & Server Controls")
+    .setTitle("📖 Help — Page 3/6: 📋 Cases & Server Controls")
     .addFields(
       { name: "`!setmodlog #channel` • `/setmodlog`", value: "Choose where moderation cases are logged.\n*(Manage Server)*" },
       { name: "`!case <id>` • `/case`", value: "Look up one moderation case.\n*(Manage Server)*" },
@@ -62,13 +63,13 @@ function page3(): EmbedBuilder {
       { name: "`!announce #channel <message>` • `/announce`", value: "Send an announcement embed to a channel.\n*(Manage Server)*" },
       { name: "\u200b", value: "**Case types:** ⚠️ WARN • 🔇 MUTE • 🔊 UNMUTE • 🥾 KICK • 🔨 BAN • 🔓 UNBAN" },
     )
-    .setFooter({ text: "Page 3 of 5 • Use buttons to navigate" });
+    .setFooter({ text: "Page 3 of 6 • Use buttons to navigate" });
 }
 
 function page4(): EmbedBuilder {
   return new EmbedBuilder()
     .setColor(C)
-    .setTitle("📖 Help — Page 4/5: 📊 Server & Utility")
+    .setTitle("📖 Help — Page 4/6: 📊 Server & Utility")
     .addFields(
       { name: "`!userinfo [@user]` • `/userinfo`", value: "View member ID, roles, account age, and join date." },
       { name: "`!serverinfo` • `/serverinfo`", value: "View server owner, members, channels, roles, and boosts." },
@@ -78,13 +79,13 @@ function page4(): EmbedBuilder {
       { name: "`!channelinfo` • `/channelinfo`", value: "Show current channel ID, type, category, and creation time." },
       { name: "`!avatar [@user]` • `/avatar`", value: "Show a member's avatar in high resolution." },
     )
-    .setFooter({ text: "Page 4 of 5 • Use buttons to navigate" });
+    .setFooter({ text: "Page 4 of 6 • Use buttons to navigate" });
 }
 
 function page5(): EmbedBuilder {
   return new EmbedBuilder()
     .setColor(C)
-    .setTitle("📖 Help — Page 5/5: 🎮 Fun & Games")
+    .setTitle("📖 Help — Page 5/6: 🎮 Fun & Games")
     .addFields(
       { name: "💣 **Word Bomb**", value: "\u200b" },
       { name: "`!wordbomb` / `!wb` • `/wordbomb`", value: "Start a Word Bomb game. React ✅ to join.\n**10s** per turn, **3 lives** each. Real English words only!" },
@@ -92,10 +93,24 @@ function page5(): EmbedBuilder {
       { name: "`!wbtop` • `/wbtop`", value: "Show the Word Bomb win leaderboard for this server." },
       { name: "✅ **Command notes**", value: "Slash commands appear server-by-server after the bot starts. Prefix commands continue to work as before.\n\nFor accurate online/offline presence counts, enable **Server Members Intent** and **Presence Intent** in the Discord Developer Portal." },
     )
-    .setFooter({ text: "Page 5 of 5 • Use buttons to navigate" });
+    .setFooter({ text: "Page 5 of 6 • Use buttons to navigate" });
 }
 
-const PAGES = [page1, page2, page3, page4, page5];
+function page6(): EmbedBuilder {
+  const fields = SOCIAL_ACTION_NAMES.map((name) => ({
+    name: `\`!${name} @user\` • \`/${name} user\``,
+    value: SOCIAL_ACTIONS[name].help,
+  }));
+
+  return new EmbedBuilder()
+    .setColor(C)
+    .setTitle("📖 Help — Page 6/6: 💬 Social")
+    .setDescription("Mention a server member with prefix commands, or choose a member in the slash command. These are playful actions.")
+    .addFields(...fields)
+    .setFooter({ text: "Page 6 of 6 • Use buttons to navigate" });
+}
+
+const PAGES = [page1, page2, page3, page4, page5, page6];
 const TOTAL = PAGES.length;
 
 function buildRow(currentPage: number) {

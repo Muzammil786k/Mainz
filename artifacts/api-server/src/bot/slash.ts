@@ -11,6 +11,7 @@ import {
 } from "discord.js";
 import { handleMessage } from "./commands";
 import { logger } from "../lib/logger";
+import { SOCIAL_ACTION_NAMES, SOCIAL_ACTIONS } from "./social";
 
 const slashCommands = [
   new SlashCommandBuilder()
@@ -157,6 +158,12 @@ const slashCommands = [
   new SlashCommandBuilder()
     .setName("wbtop")
     .setDescription("Show the Word Bomb leaderboard."),
+  ...SOCIAL_ACTION_NAMES.map((name) =>
+    new SlashCommandBuilder()
+      .setName(name)
+      .setDescription(SOCIAL_ACTIONS[name].description)
+      .addUserOption((o) => o.setName("user").setDescription("Member to interact with").setRequired(true))
+  ),
 ].map((command) => command.toJSON());
 
 function mentionContent(interaction: ChatInputCommandInteraction, optionName: string, fallback = ""): string {
