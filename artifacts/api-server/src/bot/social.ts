@@ -246,6 +246,10 @@ export const SOCIAL_ACTIONS = {
 export type SocialActionName = keyof typeof SOCIAL_ACTIONS;
 export const SOCIAL_ACTION_NAMES = Object.keys(SOCIAL_ACTIONS) as SocialActionName[];
 
+function safeDisplayName(name: string): string {
+  return name.replace(/@/g, "@\u200b");
+}
+
 interface NekoGifResult {
   anime_name?: unknown;
   url?: unknown;
@@ -312,19 +316,20 @@ export async function handleSocialAction(message: Message, actionName: SocialAct
 
   const action = SOCIAL_ACTIONS[actionName];
   const gif = await fetchAnimeGif(action.gifCategory);
+  const actorName = safeDisplayName(message.member?.displayName ?? message.author.username);
+  const targetName = safeDisplayName(target.displayName);
   const embed = new EmbedBuilder()
     .setColor(0x2b2d31)
     .setTitle(action.title)
     .setDescription(
-      `${action.render(`<@${message.author.id}>`, `<@${target.id}>`)}${gif ? "" : "\n\n🎞️ Anime GIF is temporarily unavailable."}`,
+      `${action.render(actorName, targetName)}${gif ? "" : "\n\n🎞️ Anime GIF is temporarily unavailable."}`,
     )
     .setFooter({ text: "Just for fun — keep it friendly." });
 
   if (gif) embed.setImage(gif.url);
 
   await message.reply({
-    content: `<@${target.id}>`,
     embeds: [embed],
-    allowedMentions: { users: [target.id], repliedUser: false },
+    allowedMentions: { parse: [], repliedUser: false },
   });
 }
