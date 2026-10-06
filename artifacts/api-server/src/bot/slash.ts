@@ -20,8 +20,8 @@ const slashCommands = [
     .setName("gstart")
     .setDescription("Start a giveaway.")
     .addStringOption((o) => o.setName("duration").setDescription("Duration, e.g. 30s, 5m, 2h, 1d").setRequired(true))
-    .addIntegerOption((o) => o.setName("winners").setDescription("Number of winners").setMinValue(1).setMaxValue(20))
-    .addStringOption((o) => o.setName("prize").setDescription("Giveaway prize").setRequired(true)),
+    .addStringOption((o) => o.setName("prize").setDescription("Giveaway prize").setRequired(true))
+    .addIntegerOption((o) => o.setName("winners").setDescription("Number of winners").setMinValue(1).setMaxValue(20)),
   new SlashCommandBuilder()
     .setName("gend")
     .setDescription("End a running giveaway.")
