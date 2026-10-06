@@ -7,7 +7,7 @@ import {
   type Message,
 } from "discord.js";
 
-const C = 0xff0000;
+const C = 0x2b2d31;
 const TIMEOUT = 60_000;
 
 function page1(): EmbedBuilder {
@@ -67,7 +67,7 @@ function page3(): EmbedBuilder {
 
 function page4(): EmbedBuilder {
   return new EmbedBuilder()
-    .setColor(0x5865f2)
+    .setColor(C)
     .setTitle("📖 Help — Page 4/5: 📊 Server & Utility")
     .addFields(
       { name: "`!userinfo [@user]` • `/userinfo`", value: "View member ID, roles, account age, and join date." },
@@ -83,7 +83,7 @@ function page4(): EmbedBuilder {
 
 function page5(): EmbedBuilder {
   return new EmbedBuilder()
-    .setColor(0xffa500)
+    .setColor(C)
     .setTitle("📖 Help — Page 5/5: 🎮 Fun & Games")
     .addFields(
       { name: "💣 **Word Bomb**", value: "\u200b" },
