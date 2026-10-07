@@ -10,6 +10,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@lottiefiles/dotlottie-web": "0.81.0",
+    "@napi-rs/canvas": "^1.0.10",
     "@workspace/api-zod": "workspace:*",
     "@workspace/db": "workspace:*",
     "an-array-of-english-words": "^2.0.0",

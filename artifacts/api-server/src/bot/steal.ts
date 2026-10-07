@@ -8,6 +8,8 @@ import {
   type Message,
   type Sticker,
 } from "discord.js";
+import { readFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import sharp from "sharp";
 import { logger } from "../lib/logger";
 
@@ -19,7 +21,7 @@ interface StealableAsset {
   display: string;
   emojiUrl: string;
   stickerUrl: string;
-  extension: "png" | "gif" | "apng";
+  extension: "png" | "gif" | "apng" | "lottie";
   sourceType: "emoji" | "sticker";
   twemojiArtwork: boolean;
 }
@@ -37,6 +39,14 @@ const MAX_STICKER_BYTES = 512 * 1024;
 const MAX_SOURCE_IMAGE_BYTES = 8 * 1024 * 1024;
 const STICKER_DIMENSION = 320;
 const COMPONENT_TIMEOUT = 60_000;
+const LOTTIE_RENDER_TIMEOUT = 8_000;
+
+let lottieRuntime:
+  | Promise<{
+      DotLottie: typeof import("@lottiefiles/dotlottie-web").DotLottie;
+      createCanvas: typeof import("@napi-rs/canvas").createCanvas;
+    }>
+  | undefined;
 
 function emojiFromMessage(content: string): StealableAsset | null {
   const customMatch = CUSTOM_EMOJI_PATTERN.exec(content);
@@ -95,6 +105,9 @@ function stickerFromMessage(sticker: Sticker): StealableAsset | null {
     case StickerFormatType.GIF:
       extension = "gif";
       break;
+    case StickerFormatType.Lottie:
+      extension = "lottie";
+      break;
     default:
       return null;
   }
@@ -120,6 +133,106 @@ function safeAssetName(name: string, maxLength: number): string {
   return cleaned.length >= 2 ? cleaned : "stolen_emoji";
 }
 
+async function getLottieRuntime() {
+  lottieRuntime ??= (async () => {
+    const [renderer, canvas] = await Promise.all([
+      import("@lottiefiles/dotlottie-web"),
+      import("@napi-rs/canvas"),
+    ]);
+    const require = createRequire(import.meta.url);
+    const wasmPath = require.resolve(
+      "@lottiefiles/dotlottie-web/dotlottie-player.wasm",
+    );
+    const wasm = await readFile(wasmPath);
+    renderer.DotLottie.setWasmUrl(
+      `data:application/wasm;base64,${wasm.toString("base64")}`,
+    );
+    return {
+      DotLottie: renderer.DotLottie,
+      createCanvas: canvas.createCanvas,
+    };
+  })();
+  return lottieRuntime;
+}
+
+async function renderLottieSticker(data: Buffer): Promise<Buffer> {
+  let animation: unknown;
+  try {
+    animation = JSON.parse(data.toString("utf8"));
+  } catch {
+    throw new Error("The Lottie sticker could not be converted to an image.");
+  }
+  if (!animation || typeof animation !== "object" || Array.isArray(animation)) {
+    throw new Error("The Lottie sticker could not be converted to an image.");
+  }
+
+  const { DotLottie, createCanvas } = await getLottieRuntime();
+  const canvas = createCanvas(STICKER_DIMENSION, STICKER_DIMENSION);
+
+  return new Promise((resolve, reject) => {
+    let player: InstanceType<typeof DotLottie> | undefined;
+    let settled = false;
+    let timeout: NodeJS.Timeout;
+
+    const cleanup = () => {
+      clearTimeout(timeout);
+      if (player) {
+        player.removeEventListener("frame", onFrame);
+        player.removeEventListener("loadError", onError);
+        player.removeEventListener("renderError", onError);
+        try {
+          player.destroy();
+        } catch {
+          // The image has already been produced; cleanup should not discard it.
+        }
+      }
+    };
+    const fail = (error: Error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(error);
+    };
+    const onFrame = () => {
+      if (settled) return;
+      try {
+        const png = canvas.toBuffer("image/png");
+        if (png.length === 0) {
+          fail(new Error("The Lottie sticker could not be converted to an image."));
+          return;
+        }
+        settled = true;
+        cleanup();
+        resolve(png);
+      } catch {
+        fail(new Error("The Lottie sticker could not be converted to an image."));
+      }
+    };
+    const onError = () =>
+      fail(new Error("The Lottie sticker could not be converted to an image."));
+
+    timeout = setTimeout(
+      () => fail(new Error("The Lottie sticker took too long to render.")),
+      LOTTIE_RENDER_TIMEOUT,
+    );
+
+    try {
+      player = new DotLottie({
+        canvas: canvas as unknown as import("@lottiefiles/dotlottie-web").RenderSurface,
+        data: animation as Record<string, unknown>,
+        autoplay: true,
+        loop: false,
+        useFrameInterpolation: false,
+      });
+      player.addEventListener("frame", onFrame);
+      player.addEventListener("loadError", onError);
+      player.addEventListener("renderError", onError);
+    } catch {
+      fail(new Error("The Lottie sticker could not be converted to an image."));
+    }
+  });
+}
+
 function uniqueAssetName(message: Message, baseName: string, kind: AssetKind): string {
   const maxLength = kind === "emoji" ? 32 : 30;
   const base = safeAssetName(baseName, maxLength);
@@ -143,7 +256,12 @@ async function fetchAssetImage(
   kind: AssetKind,
 ): Promise<ProcessedImage> {
   const response = await fetch(kind === "emoji" ? source.emojiUrl : source.stickerUrl, {
-    headers: { Accept: "image/png,image/apng,image/gif" },
+    headers: {
+      Accept:
+        source.extension === "lottie"
+          ? "application/json"
+          : "image/png,image/apng,image/gif",
+    },
     signal: AbortSignal.timeout(8_000),
   });
   if (!response.ok) {
@@ -155,9 +273,13 @@ async function fetchAssetImage(
     throw new Error("The source image is too large to process safely.");
   }
 
-  const sourceImage = Buffer.from(await response.arrayBuffer());
+  let sourceImage: Buffer = Buffer.from(await response.arrayBuffer());
   if (sourceImage.length === 0 || sourceImage.length > MAX_SOURCE_IMAGE_BYTES) {
     throw new Error("The source image is too large or empty.");
+  }
+
+  if (source.extension === "lottie") {
+    sourceImage = await renderLottieSticker(sourceImage);
   }
 
   if (kind === "emoji" && source.sourceType === "emoji") {
@@ -170,7 +292,7 @@ async function fetchAssetImage(
     };
   }
 
-  const animated = source.extension !== "png";
+  const animated = source.extension === "gif" || source.extension === "apng";
   const dimension = kind === "emoji" ? 128 : STICKER_DIMENSION;
   const resizedImage = sharp(sourceImage, { animated }).resize({
     width: dimension,
@@ -286,13 +408,9 @@ export async function handleSteal(message: Message): Promise<void> {
     .find((asset): asset is StealableAsset => asset !== null);
   const source = sourceSticker ?? emojiFromMessage(searchableContent);
   if (!source) {
-    const hasLottieSticker = stickers.some(
-      (sticker) => sticker.format === StickerFormatType.Lottie,
-    );
     await message.reply({
-      content: hasLottieSticker
-        ? "❌ I found a Lottie sticker, which can't be converted to an image yet. Reply to a message with a PNG, APNG, or GIF sticker instead."
-        : "❌ I couldn't find an emoji or image sticker in that message. Reply to a message containing an emoji or PNG, APNG, or GIF sticker.",
+      content:
+        "❌ I couldn't find a supported emoji or sticker in that message. Reply to a message containing an emoji or PNG, APNG, GIF, or Lottie sticker.",
       allowedMentions: { parse: [], repliedUser: false },
     });
     return;
@@ -347,7 +465,9 @@ export async function handleSteal(message: Message): Promise<void> {
     } catch (error) {
       logger.warn({ err: error, guildId: guild.id }, "Could not add a stolen emoji or sticker");
       const reason =
-        error instanceof Error && error.message.includes("too large")
+        error instanceof Error &&
+        (error.message.includes("too large") ||
+          error.message.includes("Lottie sticker"))
           ? error.message
           : "Discord rejected the upload. The server may be out of slots, the bot may lack permission, or the image may not meet Discord's sticker requirements.";
       await choiceMessage

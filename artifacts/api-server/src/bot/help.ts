@@ -90,7 +90,7 @@ function page4(): EmbedBuilder {
       { name: "`!botinfo` • `/botinfo`", value: "Show bot tag, server count, latency, and uptime." },
       { name: "`!channelinfo` • `/channelinfo`", value: "Show current channel ID, type, category, and creation time." },
       { name: "`!avatar [@user]` • `/avatar`", value: "Show a member's avatar in high resolution." },
-      { name: "`!steal` (reply to an emoji or sticker)", value: "Choose to add an emoji or PNG/APNG/GIF sticker from the replied-to message as a server emoji or sticker. Requires **Create Expressions** permission and an available slot." },
+      { name: "`!steal` (reply to an emoji or sticker)", value: "Choose to add an emoji or PNG/APNG/GIF sticker from the replied-to message as a server emoji or sticker. Lottie stickers are converted to a still image. Requires **Create Expressions** permission and an available slot." },
     )
     .setFooter({ text: HELP_FOOTER });
 }
