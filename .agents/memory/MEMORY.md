@@ -1,3 +1,4 @@
 - [Railway monorepo startup](railway-monorepo-startup.md) — keep a root-level start script because Railpack may not apply nested service config reliably.
 - [API server runtime](api-server-runtime.md) — keep the Node HTTP server; Express pulled a Package Firewall-blocked dependency.
 - [Social action mentions](social-action-mentions.md) — social reactions must not ping targets; use plain display names in embeds.
+- [Scoped workspace installs](scoped-workspace-installs.md) — isolate a service's dependency install when an unrelated workspace package is blocked.

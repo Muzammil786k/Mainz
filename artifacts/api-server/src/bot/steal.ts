@@ -6,6 +6,7 @@ import {
   PermissionFlagsBits,
   type Message,
 } from "discord.js";
+import sharp from "sharp";
 import { logger } from "../lib/logger";
 
 type AssetKind = "emoji" | "sticker";
@@ -24,6 +25,8 @@ const UNICODE_EMOJI_PATTERN =
   /(?:\p{Regional_Indicator}{2}|[#*0-9]\uFE0F?\u20E3|\p{Extended_Pictographic}(?:\uFE0F|\uFE0E)?(?:\p{Emoji_Modifier})?(?:\u200D\p{Extended_Pictographic}(?:\uFE0F|\uFE0E)?(?:\p{Emoji_Modifier})?)*)/u;
 const MAX_EMOJI_BYTES = 256 * 1024;
 const MAX_STICKER_BYTES = 512 * 1024;
+const MAX_SOURCE_IMAGE_BYTES = 8 * 1024 * 1024;
+const STICKER_DIMENSION = 320;
 const COMPONENT_TIMEOUT = 60_000;
 
 function emojiFromMessage(content: string): StealableEmoji | null {
@@ -35,7 +38,7 @@ function emojiFromMessage(content: string): StealableEmoji | null {
 
     const extension = animatedFlag === "a" ? "gif" : "png";
     const emojiUrl = `https://cdn.discordapp.com/emojis/${emojiId}.${extension}?size=128`;
-    const stickerUrl = `https://cdn.discordapp.com/emojis/${emojiId}.${extension}?size=320`;
+    const stickerUrl = `https://cdn.discordapp.com/emojis/${emojiId}.${extension}?size=512`;
     return {
       name: emojiName,
       emoji: customMatch[0],
@@ -95,7 +98,6 @@ function uniqueAssetName(message: Message, baseName: string, kind: AssetKind): s
 }
 
 async function fetchEmojiImage(source: StealableEmoji, kind: AssetKind): Promise<Buffer> {
-  const maxBytes = kind === "emoji" ? MAX_EMOJI_BYTES : MAX_STICKER_BYTES;
   const response = await fetch(kind === "emoji" ? source.emojiUrl : source.stickerUrl, {
     headers: { Accept: "image/png,image/gif" },
     signal: AbortSignal.timeout(8_000),
@@ -105,15 +107,37 @@ async function fetchEmojiImage(source: StealableEmoji, kind: AssetKind): Promise
   }
 
   const contentLength = Number(response.headers.get("content-length"));
-  if (Number.isFinite(contentLength) && contentLength > maxBytes) {
-    throw new Error(`The image is too large to add as a ${kind}.`);
+  if (Number.isFinite(contentLength) && contentLength > MAX_SOURCE_IMAGE_BYTES) {
+    throw new Error("The source image is too large to process safely.");
   }
 
-  const bytes = Buffer.from(await response.arrayBuffer());
-  if (bytes.length === 0 || bytes.length > maxBytes) {
-    throw new Error(`The image is too large or empty for a ${kind}.`);
+  const sourceImage = Buffer.from(await response.arrayBuffer());
+  if (sourceImage.length === 0 || sourceImage.length > MAX_SOURCE_IMAGE_BYTES) {
+    throw new Error("The source image is too large or empty.");
   }
-  return bytes;
+
+  if (kind === "emoji") {
+    if (sourceImage.length > MAX_EMOJI_BYTES) {
+      throw new Error("The image is too large to add as an emoji.");
+    }
+    return sourceImage;
+  }
+
+  const resizedImage = sharp(sourceImage, { animated: source.extension === "gif" }).resize({
+    width: STICKER_DIMENSION,
+    height: STICKER_DIMENSION,
+    fit: "contain",
+    background: { r: 0, g: 0, b: 0, alpha: 0 },
+  });
+  const stickerImage =
+    source.extension === "gif"
+      ? await resizedImage.gif().toBuffer()
+      : await resizedImage.png().toBuffer();
+
+  if (stickerImage.length === 0 || stickerImage.length > MAX_STICKER_BYTES) {
+    throw new Error("The resized image is too large or empty for a sticker.");
+  }
+  return stickerImage;
 }
 
 async function addEmoji(message: Message, source: StealableEmoji): Promise<string> {
@@ -257,10 +281,10 @@ export async function handleSteal(message: Message): Promise<void> {
       const reason =
         error instanceof Error && error.message.includes("too large")
           ? error.message
-          : "The server may be out of slots or the bot may not have permission.";
+          : "Discord rejected the upload. The server may be out of slots, the bot may lack permission, or the image may not meet Discord's sticker requirements.";
       await choiceMessage
         .edit({
-          content: `❌ Couldn't add it. ${reason} Emoji files must be under 256 KB and stickers under 512 KB.`,
+          content: `❌ Couldn't add it. ${reason} Emoji files must be at most 256 KiB and stickers at most 512 KiB.`,
           components: [],
         })
         .catch(() => {});
