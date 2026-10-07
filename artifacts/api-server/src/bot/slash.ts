@@ -158,6 +158,11 @@ const slashCommands = [
   new SlashCommandBuilder()
     .setName("wbtop")
     .setDescription("Show the Word Bomb leaderboard."),
+  new SlashCommandBuilder()
+    .setName("ship")
+    .setDescription("Get a playful compatibility score for two members.")
+    .addUserOption((o) => o.setName("user1").setDescription("First member").setRequired(true))
+    .addUserOption((o) => o.setName("user2").setDescription("Second member").setRequired(true)),
   ...SOCIAL_ACTION_NAMES.map((name) =>
     new SlashCommandBuilder()
       .setName(name)
@@ -224,6 +229,8 @@ function buildLegacyContent(interaction: ChatInputCommandInteraction): string {
       return `!case ${integer("id")}`;
     case "cases":
       return `!cases ${mentionContent(interaction, "user")}`.trim();
+    case "ship":
+      return `!ship ${mentionContent(interaction, "user1")} ${mentionContent(interaction, "user2")}`.trim();
     case "userinfo":
       return `!userinfo ${mentionContent(interaction, "user")}`.trim();
     case "avatar":
@@ -251,7 +258,7 @@ function createMessageAdapter(interaction: ChatInputCommandInteraction, content:
   const selectedMembers = new Collection<string, GuildMember>();
   const selectedRoles = new Collection<string, Role>();
 
-  for (const option of ["user"]) {
+  for (const option of ["user", "user1", "user2"]) {
     const selected = interaction.options.getUser(option);
     if (selected) {
       selectedUserIds.add(selected.id);
@@ -317,7 +324,7 @@ export async function handleSlashCommand(client: Client, interaction: ChatInputC
   }
 
   try {
-    if (Object.hasOwn(SOCIAL_ACTIONS, interaction.commandName)) {
+    if (Object.hasOwn(SOCIAL_ACTIONS, interaction.commandName) || interaction.commandName === "ship") {
       await interaction.deferReply();
     }
 

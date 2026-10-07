@@ -106,12 +106,18 @@ function socialPage(pageNumber: number): EmbedBuilder {
     name: `\`!${name} @user\` • \`/${name} user\``,
     value: SOCIAL_ACTIONS[name].help,
   }));
+  if (pageNumber === STATIC_PAGE_COUNT + 1) {
+    fields.unshift({
+      name: "`!ship @user1 @user2` • `/ship user1 user2`",
+      value: "Get a playful compatibility score for two members. No one gets pinged.",
+    });
+  }
 
   return new EmbedBuilder()
     .setColor(C)
     .setTitle(`📖 Help — Page ${pageNumber}/${TOTAL}: 💬 Social`)
     .setDescription(
-      "Mention a server member with prefix commands, or choose a member in the slash command. These playful commands include anime GIFs.",
+      "Mention a member with prefix commands, or choose a member in slash commands. Social reactions include anime GIFs; score commands show a playful result.",
     )
     .addFields(...fields)
     .setFooter({ text: `Page ${pageNumber} of ${TOTAL} • Use buttons to navigate` });

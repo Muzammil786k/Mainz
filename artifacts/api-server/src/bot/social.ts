@@ -6,7 +6,20 @@ interface SocialAction {
   title: string;
   help: string;
   gifCategory: string;
-  render: (actor: string, target: string) => string;
+  render: (actor: string, target: string, targetId: string) => string;
+}
+
+function seededScore(seed: string, min: number, max: number): number {
+  let hash = 2166136261;
+  for (const character of seed) {
+    hash = Math.imul(hash ^ character.charCodeAt(0), 16777619);
+  }
+  return min + ((hash >>> 0) % (max - min + 1));
+}
+
+function dailyScore(kind: string, targetId: string, min: number, max: number): number {
+  const day = new Date().toISOString().slice(0, 10);
+  return seededScore(`${kind}:${targetId}:${day}`, min, max);
 }
 
 export const SOCIAL_ACTIONS = {
@@ -241,6 +254,89 @@ export const SOCIAL_ACTIONS = {
     gifCategory: "clap",
     render: (actor, target) => `${actor} gives ${target} a big round of applause!`,
   },
+  aura: {
+    description: "Check a member's daily aura score.",
+    title: "✨ Aura check",
+    help: "See someone's daily aura points. The score changes each day.",
+    gifCategory: "smug",
+    render: (_actor, target, targetId) => {
+      const score = dailyScore("aura", targetId, -1000, 1000);
+      const points = `${score >= 0 ? "+" : ""}${score.toLocaleString()}`;
+      const verdict =
+        score >= 750
+          ? "Unstoppable main-character energy!"
+          : score >= 0
+            ? "Aura is looking good."
+            : "A little aura debt—comeback loading!";
+      return `**${target}** has **${points} aura** today. ${verdict}`;
+    },
+  },
+  rizz: {
+    description: "Get a member's daily rizz score.",
+    title: "😎 Rizz check",
+    help: "Get someone's daily charm score, out of 100.",
+    gifCategory: "wink",
+    render: (_actor, target, targetId) => {
+      const score = dailyScore("rizz", targetId, 0, 100);
+      const verdict =
+        score >= 85
+          ? "Certified smooth."
+          : score >= 60
+            ? "The charm is working."
+            : score >= 30
+              ? "Rizz is loading..."
+              : "Quiet confidence still counts.";
+      return `**${target}** has **${score}/100 rizz** today. ${verdict}`;
+    },
+  },
+  vibecheck: {
+    description: "Run a playful daily vibe check on a member.",
+    title: "🌈 Vibe check",
+    help: "Check someone's daily vibe score, out of 100.",
+    gifCategory: "smile",
+    render: (_actor, target, targetId) => {
+      const score = dailyScore("vibe", targetId, 0, 100);
+      const verdict =
+        score >= 80
+          ? "Excellent vibes."
+          : score >= 55
+            ? "Good energy all around."
+            : score >= 30
+              ? "A calm, low-key vibe."
+              : "Recharge mode—be kind to yourself.";
+      return `**${target}** scores **${score}/100** on today's vibe check. ${verdict}`;
+    },
+  },
+  rate: {
+    description: "Give a member a playful daily rating.",
+    title: "⭐ Daily rating",
+    help: "Give someone a friendly, for-fun rating out of 10.",
+    gifCategory: "happy",
+    render: (_actor, target, targetId) => {
+      const score = dailyScore("rate", targetId, 0, 100);
+      return `Today's totally-for-fun rating for **${target}**: **${(score / 10).toFixed(1)}/10** ⭐`;
+    },
+  },
+  compliment: {
+    description: "Send a member a friendly compliment.",
+    title: "💛 A little appreciation",
+    help: "Send someone a friendly compliment.",
+    gifCategory: "happy",
+    render: (_actor, target, targetId) => {
+      const compliments = [
+        "you make this server a better place.",
+        "your energy is always appreciated.",
+        "you have a knack for making people smile.",
+        "you are more awesome than you realize.",
+        "your kindness does not go unnoticed.",
+        "you bring great vibes wherever you go.",
+        "you are a genuinely fun person to have around.",
+        "you deserve a little appreciation today.",
+      ];
+      const index = dailyScore("compliment", targetId, 0, compliments.length - 1);
+      return `**${target}**, ${compliments[index]}`;
+    },
+  },
 } satisfies Record<string, SocialAction>;
 
 export type SocialActionName = keyof typeof SOCIAL_ACTIONS;
@@ -322,11 +418,75 @@ export async function handleSocialAction(message: Message, actionName: SocialAct
     .setColor(0x2b2d31)
     .setTitle(action.title)
     .setDescription(
-      `${action.render(actorName, targetName)}${gif ? "" : "\n\n🎞️ Anime GIF is temporarily unavailable."}`,
+      `${action.render(actorName, targetName, target.id)}${gif ? "" : "\n\n🎞️ Anime GIF is temporarily unavailable."}`,
     )
     .setFooter({ text: "Just for fun — keep it friendly." });
 
   if (gif) embed.setImage(gif.url);
+
+  await message.reply({
+    embeds: [embed],
+    allowedMentions: { parse: [], repliedUser: false },
+  });
+}
+
+export async function handleShip(message: Message): Promise<void> {
+  if (!message.guild) return;
+
+  const users = [...message.mentions.users.values()];
+  if (users.length !== 2) {
+    await message.reply({
+      content: "❌ Mention exactly two different members. Usage: `!ship @user1 @user2`",
+      allowedMentions: { parse: [], repliedUser: false },
+    });
+    return;
+  }
+
+  const [firstUser, secondUser] = users;
+  if (!firstUser || !secondUser || firstUser.id === secondUser.id) {
+    await message.reply({
+      content: "❌ Please choose two different members for the ship check.",
+      allowedMentions: { parse: [], repliedUser: false },
+    });
+    return;
+  }
+
+  const [firstMember, secondMember] = await Promise.all([
+    message.guild.members.cache.get(firstUser.id) ??
+      message.guild.members.fetch(firstUser.id).catch(() => null),
+    message.guild.members.cache.get(secondUser.id) ??
+      message.guild.members.fetch(secondUser.id).catch(() => null),
+  ]);
+  if (!firstMember || !secondMember) {
+    await message.reply({
+      content: "❌ I couldn’t find both members in this server.",
+      allowedMentions: { parse: [], repliedUser: false },
+    });
+    return;
+  }
+
+  const pairKey = [firstUser.id, secondUser.id].sort().join(":");
+  const score = seededScore(`ship:${pairKey}`, 0, 100);
+  const filledHearts = Math.round(score / 10);
+  const meter = `${"💖".repeat(filledHearts)}${"🤍".repeat(10 - filledHearts)}`;
+  const verdict =
+    score >= 90
+      ? "Cosmic-level duo energy!"
+      : score >= 75
+        ? "An elite duo with great chemistry."
+        : score >= 50
+          ? "Good vibes—this could be a fun duo."
+          : score >= 25
+            ? "A chaotic duo, but an iconic one."
+            : "Opposites attract; the memes are guaranteed.";
+
+  const embed = new EmbedBuilder()
+    .setColor(0xff72a6)
+    .setTitle("💘 Ship check")
+    .setDescription(
+      `**${safeDisplayName(firstMember.displayName)} × ${safeDisplayName(secondMember.displayName)}**\n\n${meter} **${score}%**\n${verdict}`,
+    )
+    .setFooter({ text: "Just for fun — not a real compatibility reading." });
 
   await message.reply({
     embeds: [embed],
