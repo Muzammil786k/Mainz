@@ -4,20 +4,29 @@ import {
   ButtonStyle,
   ComponentType,
   PermissionFlagsBits,
+  StickerFormatType,
   type Message,
+  type Sticker,
 } from "discord.js";
 import sharp from "sharp";
 import { logger } from "../lib/logger";
 
 type AssetKind = "emoji" | "sticker";
 
-interface StealableEmoji {
+interface StealableAsset {
   name: string;
   emoji: string;
+  display: string;
   emojiUrl: string;
   stickerUrl: string;
-  extension: "png" | "gif";
+  extension: "png" | "gif" | "apng";
+  sourceType: "emoji" | "sticker";
   twemojiArtwork: boolean;
+}
+
+interface ProcessedImage {
+  data: Buffer;
+  extension: "png" | "gif";
 }
 
 const CUSTOM_EMOJI_PATTERN = /<(a?):([a-zA-Z0-9_]{2,32}):(\d{17,20})>/;
@@ -29,7 +38,7 @@ const MAX_SOURCE_IMAGE_BYTES = 8 * 1024 * 1024;
 const STICKER_DIMENSION = 320;
 const COMPONENT_TIMEOUT = 60_000;
 
-function emojiFromMessage(content: string): StealableEmoji | null {
+function emojiFromMessage(content: string): StealableAsset | null {
   const customMatch = CUSTOM_EMOJI_PATTERN.exec(content);
   const unicodeMatch = UNICODE_EMOJI_PATTERN.exec(content);
   if (customMatch && (!unicodeMatch || customMatch.index <= unicodeMatch.index)) {
@@ -42,9 +51,11 @@ function emojiFromMessage(content: string): StealableEmoji | null {
     return {
       name: emojiName,
       emoji: customMatch[0],
+      display: customMatch[0],
       emojiUrl,
       stickerUrl,
       extension,
+      sourceType: "emoji",
       twemojiArtwork: false,
     };
   }
@@ -63,10 +74,40 @@ function emojiFromMessage(content: string): StealableEmoji | null {
   return {
     name: `emoji_${codepoints.replace(/-/g, "_")}`,
     emoji,
+    display: emoji,
     emojiUrl: imageUrl,
     stickerUrl: imageUrl,
     extension: "png",
+    sourceType: "emoji",
     twemojiArtwork: true,
+  };
+}
+
+function stickerFromMessage(sticker: Sticker): StealableAsset | null {
+  let extension: StealableAsset["extension"];
+  switch (sticker.format) {
+    case StickerFormatType.PNG:
+      extension = "png";
+      break;
+    case StickerFormatType.APNG:
+      extension = "apng";
+      break;
+    case StickerFormatType.GIF:
+      extension = "gif";
+      break;
+    default:
+      return null;
+  }
+
+  return {
+    name: sticker.name,
+    emoji: "✨",
+    display: `sticker \`${safeAssetName(sticker.name, 30)}\``,
+    emojiUrl: sticker.url,
+    stickerUrl: sticker.url,
+    extension,
+    sourceType: "sticker",
+    twemojiArtwork: false,
   };
 }
 
@@ -97,13 +138,16 @@ function uniqueAssetName(message: Message, baseName: string, kind: AssetKind): s
   return `${base.slice(0, maxLength - 5)}_copy`;
 }
 
-async function fetchEmojiImage(source: StealableEmoji, kind: AssetKind): Promise<Buffer> {
+async function fetchAssetImage(
+  source: StealableAsset,
+  kind: AssetKind,
+): Promise<ProcessedImage> {
   const response = await fetch(kind === "emoji" ? source.emojiUrl : source.stickerUrl, {
-    headers: { Accept: "image/png,image/gif" },
+    headers: { Accept: "image/png,image/apng,image/gif" },
     signal: AbortSignal.timeout(8_000),
   });
   if (!response.ok) {
-    throw new Error(`Emoji image service returned HTTP ${response.status}`);
+    throw new Error(`Image service returned HTTP ${response.status}`);
   }
 
   const contentLength = Number(response.headers.get("content-length"));
@@ -116,58 +160,73 @@ async function fetchEmojiImage(source: StealableEmoji, kind: AssetKind): Promise
     throw new Error("The source image is too large or empty.");
   }
 
-  if (kind === "emoji") {
+  if (kind === "emoji" && source.sourceType === "emoji") {
     if (sourceImage.length > MAX_EMOJI_BYTES) {
       throw new Error("The image is too large to add as an emoji.");
     }
-    return sourceImage;
+    return {
+      data: sourceImage,
+      extension: source.extension === "gif" ? "gif" : "png",
+    };
   }
 
-  const resizedImage = sharp(sourceImage, { animated: source.extension === "gif" }).resize({
-    width: STICKER_DIMENSION,
-    height: STICKER_DIMENSION,
+  const animated = source.extension !== "png";
+  const dimension = kind === "emoji" ? 128 : STICKER_DIMENSION;
+  const resizedImage = sharp(sourceImage, { animated }).resize({
+    width: dimension,
+    height: dimension,
     fit: "contain",
     background: { r: 0, g: 0, b: 0, alpha: 0 },
   });
-  const stickerImage =
-    source.extension === "gif"
+  const extension = animated ? "gif" : "png";
+  const image =
+    animated
       ? await resizedImage.gif().toBuffer()
       : await resizedImage.png().toBuffer();
 
-  if (stickerImage.length === 0 || stickerImage.length > MAX_STICKER_BYTES) {
-    throw new Error("The resized image is too large or empty for a sticker.");
+  const maxBytes = kind === "emoji" ? MAX_EMOJI_BYTES : MAX_STICKER_BYTES;
+  if (image.length === 0 || image.length > maxBytes) {
+    throw new Error(
+      kind === "emoji"
+        ? "The image is too large to add as an emoji."
+        : "The resized image is too large or empty for a sticker.",
+    );
   }
-  return stickerImage;
+  return { data: image, extension };
 }
 
-async function addEmoji(message: Message, source: StealableEmoji): Promise<string> {
+async function addEmoji(message: Message, source: StealableAsset): Promise<string> {
   const guild = message.guild!;
   const name = uniqueAssetName(message, source.name, "emoji");
-  const image = await fetchEmojiImage(source, "emoji");
-  const mimeType = source.extension === "gif" ? "image/gif" : "image/png";
+  const image = await fetchAssetImage(source, "emoji");
+  const mimeType = image.extension === "gif" ? "image/gif" : "image/png";
   const created = await guild.emojis.create({
-    attachment: `data:${mimeType};base64,${image.toString("base64")}`,
+    attachment: `data:${mimeType};base64,${image.data.toString("base64")}`,
     name,
     reason: `Requested through !steal by ${message.author.id}`,
   });
   return `✅ Added ${created} as the server emoji **:${created.name}:**.`;
 }
 
-async function addSticker(message: Message, source: StealableEmoji): Promise<string> {
+async function addSticker(message: Message, source: StealableAsset): Promise<string> {
   const guild = message.guild!;
   const name = uniqueAssetName(message, source.name, "sticker");
-  const image = await fetchEmojiImage(source, "sticker");
+  const image = await fetchAssetImage(source, "sticker");
+  const stickerTag =
+    source.sourceType === "emoji" && !CUSTOM_EMOJI_PATTERN.test(source.emoji)
+      ? source.emoji
+      : "✨";
   const created = await guild.stickers.create({
-    file: { attachment: image, name: `${name}.${source.extension}` },
+    file: { attachment: image.data, name: `${name}.${image.extension}` },
     name,
-    tags: source.name.slice(0, 200) || "emoji",
-    description: "Added from an emoji with !steal.",
+    tags: stickerTag,
+    description: "Added with !steal.",
     reason: `Requested through !steal by ${message.author.id}`,
   });
   return `✅ Added **${created.name}** as a server sticker.`;
 }
 
-function withArtworkCredit(text: string, source: StealableEmoji): string {
+function withArtworkCredit(text: string, source: StealableAsset): string {
   return source.twemojiArtwork
     ? `${text}\nArtwork: Twemoji (CC BY 4.0) — https://github.com/jdecked/twemoji`
     : text;
@@ -198,7 +257,7 @@ export async function handleSteal(message: Message): Promise<void> {
 
   if (!message.reference?.messageId) {
     await message.reply({
-      content: "Reply to a message containing an emoji, then send `!steal`.",
+      content: "Reply to a message containing an emoji or sticker, then send `!steal`.",
       allowedMentions: { parse: [], repliedUser: false },
     });
     return;
@@ -221,10 +280,19 @@ export async function handleSteal(message: Message): Promise<void> {
       ...embed.fields.map((field) => `${field.name} ${field.value}`),
     ]),
   ].join("\n");
-  const source = emojiFromMessage(searchableContent);
+  const stickers = [...referencedMessage.stickers.values()];
+  const sourceSticker = stickers
+    .map(stickerFromMessage)
+    .find((asset): asset is StealableAsset => asset !== null);
+  const source = sourceSticker ?? emojiFromMessage(searchableContent);
   if (!source) {
+    const hasLottieSticker = stickers.some(
+      (sticker) => sticker.format === StickerFormatType.Lottie,
+    );
     await message.reply({
-      content: "❌ I couldn't find an emoji in that message. Reply to a message containing an emoji.",
+      content: hasLottieSticker
+        ? "❌ I found a Lottie sticker, which can't be converted to an image yet. Reply to a message with a PNG, APNG, or GIF sticker instead."
+        : "❌ I couldn't find an emoji or image sticker in that message. Reply to a message containing an emoji or PNG, APNG, or GIF sticker.",
       allowedMentions: { parse: [], repliedUser: false },
     });
     return;
@@ -241,7 +309,7 @@ export async function handleSteal(message: Message): Promise<void> {
       .setStyle(ButtonStyle.Secondary),
   );
   const choiceMessage = await message.reply({
-    content: `Found ${source.emoji}. Choose how to add it to this server.`,
+    content: `Found ${source.display}. Choose how to add it to this server.`,
     components: [buttons],
     allowedMentions: { parse: [], repliedUser: false },
   });
@@ -254,13 +322,13 @@ export async function handleSteal(message: Message): Promise<void> {
   collector.on("collect", async (interaction) => {
     if (interaction.user.id !== message.author.id) {
       await interaction.reply({
-        content: "Only the person who ran `!steal` can choose how to add this emoji.",
+        content: "Only the person who ran `!steal` can choose how to add this asset.",
         ephemeral: true,
       });
       return;
     }
     if (isAdding) {
-      await interaction.reply({ content: "This emoji is already being added.", ephemeral: true });
+      await interaction.reply({ content: "This asset is already being added.", ephemeral: true });
       return;
     }
 
