@@ -13,6 +13,7 @@ PORT=5000 pnpm --filter @workspace/api-server run dev
 
 Railway uses `railway.json` to build and start the API server. Add these variables to the Railway service:
 
+- `DATABASE_URL` — PostgreSQL connection string used by the bot
 - `DISCORD_BOT_TOKEN` — Discord bot token
 
 Railway provides `PORT` automatically.
