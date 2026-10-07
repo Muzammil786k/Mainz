@@ -90,6 +90,7 @@ function page4(): EmbedBuilder {
       { name: "`!botinfo` • `/botinfo`", value: "Show bot tag, server count, latency, and uptime." },
       { name: "`!channelinfo` • `/channelinfo`", value: "Show current channel ID, type, category, and creation time." },
       { name: "`!avatar [@user]` • `/avatar`", value: "Show a member's avatar in high resolution." },
+      { name: "`!steal` (reply to an emoji)", value: "Choose to add the emoji found in the replied-to message as a server emoji or sticker. Requires **Create Expressions** permission and an available slot." },
     )
     .setFooter({ text: HELP_FOOTER });
 }

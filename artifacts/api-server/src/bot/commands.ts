@@ -27,6 +27,7 @@ import {
 } from "./utility";
 import { handleSetModlog, handleCaseLookup, handleCaseList } from "./cases";
 import { handleShip, handleSocialAction, SOCIAL_ACTIONS, type SocialActionName } from "./social";
+import { handleSteal } from "./steal";
 
 const PREFIX = "g";
 
@@ -127,6 +128,8 @@ export async function handleMessage(client: Client, message: Message): Promise<v
     await handleWbTop(message);
   } else if (lower === "!ship" || lower.startsWith("!ship ")) {
     await handleShip(message);
+  } else if (lower === "!steal" || lower.startsWith("!steal ")) {
+    await handleSteal(message);
   } else {
     const command = lower.match(/^!([a-z]+)(?:\s|$)/)?.[1] as SocialActionName | undefined;
     if (command && Object.hasOwn(SOCIAL_ACTIONS, command)) {
