@@ -137,6 +137,7 @@ const REACTION_ACTIONS: SocialActionName[] = [
   "punch",
   "cry",
   "facepalm",
+  "roast",
   "cartoonkick",
   "laugh",
   "shrug",

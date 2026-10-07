@@ -337,6 +337,26 @@ export const SOCIAL_ACTIONS = {
       return `**${target}**, ${compliments[index]}`;
     },
   },
+  roast: {
+    description: "Give a member a gentle, playful roast.",
+    title: "🔥 Friendly roast",
+    help: "Give someone a light, non-personal roast. Just jokes, all love.",
+    gifCategory: "facepalm",
+    render: (_actor, target, targetId) => {
+      const roasts = [
+        "has the confidence of a Wi-Fi router with one bar.",
+        "could lose a staring contest to a loading screen.",
+        "has main-character energy, but the tutorial is still loading.",
+        "is one browser tab away from forgetting the original plan.",
+        "could turn a quick question into a full side quest.",
+        "brings so much chaos even the group chat needs a map.",
+        "has the timing of a software update at 1% battery.",
+        "could make a two-option poll feel like a final exam.",
+      ];
+      const index = dailyScore("roast", targetId, 0, roasts.length - 1);
+      return `A friendly roast for **${target}**: ${roasts[index]} All jokes, all love.`;
+    },
+  },
 } satisfies Record<string, SocialAction>;
 
 export type SocialActionName = keyof typeof SOCIAL_ACTIONS;
@@ -355,9 +375,15 @@ interface NekoGifResponse {
   results?: NekoGifResult[];
 }
 
+const GIFS_PER_REQUEST = 20;
+const RECENT_GIF_HISTORY = 100;
+const recentGifUrlsByCategory = new Map<string, Set<string>>();
+
 async function fetchAnimeGif(category: string): Promise<{ url: string; animeName?: string } | null> {
   try {
-    const response = await fetch(`https://nekos.best/api/v2/${category}`, {
+    const endpoint = new URL(`https://nekos.best/api/v2/${category}`);
+    endpoint.searchParams.set("amount", String(GIFS_PER_REQUEST));
+    const response = await fetch(endpoint, {
       headers: {
         Accept: "application/json",
         "User-Agent": "HangoutSaiBot (https://github.com/Muzammil786k/Mainz)",
@@ -369,15 +395,34 @@ async function fetchAnimeGif(category: string): Promise<{ url: string; animeName
     }
 
     const data = (await response.json()) as NekoGifResponse;
-    const result = data.results?.[0];
-    if (typeof result?.url !== "string") {
+    const candidates = (data.results ?? []).filter(
+      (result): result is NekoGifResult & { url: string } =>
+        typeof result.url === "string" && result.url.length > 0,
+    );
+    if (candidates.length === 0) {
       throw new Error("Anime GIF service returned no GIF URL");
+    }
+
+    const recent = recentGifUrlsByCategory.get(category) ?? new Set<string>();
+    const freshCandidates = candidates.filter((result) => !recent.has(result.url));
+    const pool = freshCandidates.length > 0 ? freshCandidates : candidates;
+    const result = pool[Math.floor(Math.random() * pool.length)];
+    if (!result) {
+      throw new Error("Anime GIF service returned no selectable GIF");
     }
 
     const gifUrl = new URL(result.url);
     if (gifUrl.protocol !== "https:" || gifUrl.hostname !== "nekos.best") {
       throw new Error("Anime GIF service returned an unexpected URL");
     }
+
+    recent.add(gifUrl.href);
+    while (recent.size > RECENT_GIF_HISTORY) {
+      const oldestUrl = recent.values().next().value;
+      if (!oldestUrl) break;
+      recent.delete(oldestUrl);
+    }
+    recentGifUrlsByCategory.set(category, recent);
 
     return {
       url: gifUrl.href,
