@@ -1,24 +1,32 @@
 import {
   EmbedBuilder,
   ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
   ComponentType,
+  StringSelectMenuBuilder,
   type Message,
 } from "discord.js";
-import { SOCIAL_ACTION_NAMES, SOCIAL_ACTIONS } from "./social";
+import { SOCIAL_ACTIONS, type SocialActionName } from "./social";
 
 const C = 0x2b2d31;
-const TIMEOUT = 60_000;
-const SOCIAL_PAGE_SIZE = 16;
-const STATIC_PAGE_COUNT = 5;
-const TOTAL =
-  STATIC_PAGE_COUNT + Math.ceil(SOCIAL_ACTION_NAMES.length / SOCIAL_PAGE_SIZE);
+const TIMEOUT = 5 * 60_000;
+const HELP_FOOTER = "Choose a category below to browse commands.";
+const CATEGORIES = [
+  { label: "Start & Giveaways", value: "start", description: "Help and giveaway commands" },
+  { label: "Moderation", value: "moderation", description: "Warnings, timeouts, kicks, and bans" },
+  { label: "Cases & Server Controls", value: "controls", description: "Cases, roles, channels, and announcements" },
+  { label: "Server & Utility", value: "utility", description: "Server info, members, and bot tools" },
+  { label: "Games", value: "games", description: "Word Bomb and game commands" },
+  { label: "Social: Friendly", value: "friendly", description: "Hugs, cheers, compliments, and more" },
+  { label: "Social: Affection", value: "affection", description: "Cute and affectionate reactions" },
+  { label: "Social: Reactions", value: "reactions", description: "Anime reactions and playful actions" },
+  { label: "Scores & Ships", value: "scores", description: "Aura, rizz, ratings, and ship checks" },
+] as const;
+type CategoryId = (typeof CATEGORIES)[number]["value"];
 
 function page1(): EmbedBuilder {
   return new EmbedBuilder()
     .setColor(C)
-    .setTitle(`📖 Help — Page 1/${TOTAL}: Core & Giveaways`)
+    .setTitle("📖 Help • Start & Giveaways")
     .setDescription("Prefix commands and slash commands do the same thing.")
     .addFields(
       { name: "`!help` • `/help`", value: "Show this complete help menu." },
@@ -27,13 +35,13 @@ function page1(): EmbedBuilder {
       { name: "`!greroll <message_id> [amount]` • `/greroll`", value: "Reroll one or more winners from an ended giveaway.\n*(Manage Server)*" },
       { name: "`!afk [status]` • `/afk`", value: "Set your AFK status. Send any message to remove it." },
     )
-    .setFooter({ text: `Page 1 of ${TOTAL} • Use buttons to navigate` });
+    .setFooter({ text: HELP_FOOTER });
 }
 
 function page2(): EmbedBuilder {
   return new EmbedBuilder()
     .setColor(C)
-    .setTitle(`📖 Help — Page 2/${TOTAL}: 🛡️ Moderation`)
+    .setTitle("📖 Help • Moderation")
     .addFields(
       { name: "`!warn @user [reason]` • `/warn`", value: "Warn a member, send a DM, and log a case.\n*(Manage Server)*" },
       { name: "`!warnings @user` • `/warnings`", value: "View a member's warnings.\n*(Manage Server)*" },
@@ -50,13 +58,13 @@ function page2(): EmbedBuilder {
       { name: "`!purge <amount>` • `/purge`", value: "Delete 1–100 recent messages.\n*(Manage Messages)*" },
       { name: "`!pb [amount]` • `/pb`", value: "Delete recent bot messages.\n*(Manage Messages)*" },
     )
-    .setFooter({ text: `Page 2 of ${TOTAL} • Use buttons to navigate` });
+    .setFooter({ text: HELP_FOOTER });
 }
 
 function page3(): EmbedBuilder {
   return new EmbedBuilder()
     .setColor(C)
-    .setTitle(`📖 Help — Page 3/${TOTAL}: 📋 Cases & Server Controls`)
+    .setTitle("📖 Help • Cases & Server Controls")
     .addFields(
       { name: "`!setmodlog #channel` • `/setmodlog`", value: "Choose where moderation cases are logged.\n*(Manage Server)*" },
       { name: "`!case <id>` • `/case`", value: "Look up one moderation case.\n*(Manage Server)*" },
@@ -67,13 +75,13 @@ function page3(): EmbedBuilder {
       { name: "`!announce #channel <message>` • `/announce`", value: "Send an announcement embed to a channel.\n*(Manage Server)*" },
       { name: "\u200b", value: "**Case types:** ⚠️ WARN • 🔇 MUTE • 🔊 UNMUTE • 🥾 KICK • 🔨 BAN • 🔓 UNBAN" },
     )
-    .setFooter({ text: `Page 3 of ${TOTAL} • Use buttons to navigate` });
+    .setFooter({ text: HELP_FOOTER });
 }
 
 function page4(): EmbedBuilder {
   return new EmbedBuilder()
     .setColor(C)
-    .setTitle(`📖 Help — Page 4/${TOTAL}: 📊 Server & Utility`)
+    .setTitle("📖 Help • Server & Utility")
     .addFields(
       { name: "`!userinfo [@user]` • `/userinfo`", value: "View member ID, roles, account age, and join date." },
       { name: "`!serverinfo` • `/serverinfo`", value: "View server owner, members, channels, roles, and boosts." },
@@ -83,13 +91,13 @@ function page4(): EmbedBuilder {
       { name: "`!channelinfo` • `/channelinfo`", value: "Show current channel ID, type, category, and creation time." },
       { name: "`!avatar [@user]` • `/avatar`", value: "Show a member's avatar in high resolution." },
     )
-    .setFooter({ text: `Page 4 of ${TOTAL} • Use buttons to navigate` });
+    .setFooter({ text: HELP_FOOTER });
 }
 
 function page5(): EmbedBuilder {
   return new EmbedBuilder()
     .setColor(C)
-    .setTitle(`📖 Help — Page 5/${TOTAL}: 🎮 Fun & Games`)
+    .setTitle("📖 Help • Fun & Games")
     .addFields(
       { name: "💣 **Word Bomb**", value: "\u200b" },
       { name: "`!wordbomb` / `!wb` • `/wordbomb`", value: "Start a Word Bomb game. React ✅ to join.\n**10s** per turn, **3 lives** each. Real English words only!" },
@@ -97,17 +105,61 @@ function page5(): EmbedBuilder {
       { name: "`!wbtop` • `/wbtop`", value: "Show the Word Bomb win leaderboard for this server." },
       { name: "✅ **Command notes**", value: "Slash commands appear server-by-server after the bot starts. Prefix commands continue to work as before.\n\nFor accurate online/offline presence counts, enable **Server Members Intent** and **Presence Intent** in the Discord Developer Portal." },
     )
-    .setFooter({ text: `Page 5 of ${TOTAL} • Use buttons to navigate` });
+    .setFooter({ text: HELP_FOOTER });
 }
 
-function socialPage(pageNumber: number): EmbedBuilder {
-  const start = (pageNumber - STATIC_PAGE_COUNT - 1) * SOCIAL_PAGE_SIZE;
-  const fields = SOCIAL_ACTION_NAMES.slice(start, start + SOCIAL_PAGE_SIZE).map((name) => ({
+const FRIENDLY_ACTIONS: SocialActionName[] = [
+  "hug",
+  "highfive",
+  "wave",
+  "smile",
+  "cheer",
+  "compliment",
+];
+const AFFECTION_ACTIONS: SocialActionName[] = [
+  "kiss",
+  "bite",
+  "pat",
+  "cuddle",
+  "boop",
+  "handhold",
+  "blush",
+  "feed",
+  "nom",
+  "pout",
+];
+const REACTION_ACTIONS: SocialActionName[] = [
+  "kill",
+  "slap",
+  "poke",
+  "bonk",
+  "dance",
+  "punch",
+  "cry",
+  "facepalm",
+  "cartoonkick",
+  "laugh",
+  "shrug",
+  "smug",
+  "stare",
+  "think",
+  "tickle",
+  "wink",
+  "yeet",
+  "clap",
+];
+
+function socialCategory(
+  title: string,
+  actionNames: SocialActionName[],
+  includeShip = false,
+): EmbedBuilder {
+  const fields = actionNames.map((name) => ({
     name: `\`!${name} @user\` • \`/${name} user\``,
     value: SOCIAL_ACTIONS[name].help,
   }));
-  if (pageNumber === STATIC_PAGE_COUNT + 1) {
-    fields.unshift({
+  if (includeShip) {
+    fields.push({
       name: "`!ship @user1 @user2` • `/ship user1 user2`",
       value: "Get a playful compatibility score for two members. No one gets pinged.",
     });
@@ -115,60 +167,75 @@ function socialPage(pageNumber: number): EmbedBuilder {
 
   return new EmbedBuilder()
     .setColor(C)
-    .setTitle(`📖 Help — Page ${pageNumber}/${TOTAL}: 💬 Social`)
-    .setDescription(
-      "Mention a member with prefix commands, or choose a member in slash commands. Social reactions include anime GIFs; score commands show a playful result.",
-    )
+    .setTitle(`📖 Help • ${title}`)
+    .setDescription("Prefix and slash commands do the same thing. Choose a category below to switch.")
     .addFields(...fields)
-    .setFooter({ text: `Page ${pageNumber} of ${TOTAL} • Use buttons to navigate` });
+    .setFooter({ text: HELP_FOOTER });
 }
 
-const PAGES = [
-  page1,
-  page2,
-  page3,
-  page4,
-  page5,
-  ...Array.from(
-    { length: Math.ceil(SOCIAL_ACTION_NAMES.length / SOCIAL_PAGE_SIZE) },
-    (_, index) => () => socialPage(STATIC_PAGE_COUNT + index + 1),
-  ),
-];
+const CATEGORY_BUILDERS: Record<CategoryId, () => EmbedBuilder> = {
+  start: page1,
+  moderation: page2,
+  controls: page3,
+  utility: page4,
+  games: page5,
+  friendly: () => socialCategory("Social: Friendly", FRIENDLY_ACTIONS),
+  affection: () => socialCategory("Social: Affection", AFFECTION_ACTIONS),
+  reactions: () => socialCategory("Social: Reactions", REACTION_ACTIONS),
+  scores: () => socialCategory("Scores & Ships", ["aura", "rizz", "vibecheck", "rate"], true),
+};
 
-function buildRow(currentPage: number) {
-  return new ActionRowBuilder<ButtonBuilder>().addComponents(
-    new ButtonBuilder().setCustomId("help_prev").setLabel("◀ Previous").setStyle(ButtonStyle.Secondary).setDisabled(currentPage === 1),
-    new ButtonBuilder().setCustomId("help_page").setLabel(`Page ${currentPage} / ${TOTAL}`).setStyle(ButtonStyle.Primary).setDisabled(true),
-    new ButtonBuilder().setCustomId("help_next").setLabel("Next ▶").setStyle(ButtonStyle.Secondary).setDisabled(currentPage === TOTAL),
-  );
+function buildCategoryRow(selected: CategoryId) {
+  const menu = new StringSelectMenuBuilder()
+    .setCustomId("help_category")
+    .setPlaceholder("Choose a help category")
+    .addOptions(
+      CATEGORIES.map((category) => ({
+        label: category.label,
+        value: category.value,
+        description: category.description,
+        default: category.value === selected,
+      })),
+    );
+  return new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(menu);
 }
 
 export async function handleHelp(message: Message): Promise<void> {
-  let currentPage = 1;
+  let currentCategory: CategoryId = "start";
 
   const helpMsg = await message.reply({
-    embeds: [PAGES[0]()],
-    components: [buildRow(currentPage)],
+    embeds: [CATEGORY_BUILDERS[currentCategory]()],
+    components: [buildCategoryRow(currentCategory)],
   });
 
   const collector = helpMsg.createMessageComponentCollector({
-    componentType: ComponentType.Button,
+    componentType: ComponentType.StringSelect,
     time: TIMEOUT,
-    filter: (i) => i.user.id === message.author.id,
   });
 
   collector.on("collect", async (interaction) => {
-    if (interaction.customId === "help_prev" && currentPage > 1) currentPage--;
-    else if (interaction.customId === "help_next" && currentPage < TOTAL) currentPage++;
-    await interaction.update({ embeds: [PAGES[currentPage - 1]()], components: [buildRow(currentPage)] });
+    if (interaction.user.id !== message.author.id) {
+      await interaction.reply({
+        content: "Only the person who opened this help menu can change its category.",
+        ephemeral: true,
+      });
+      return;
+    }
+
+    const selected = CATEGORIES.find((category) => category.value === interaction.values[0]);
+    if (!selected) {
+      await interaction.deferUpdate();
+      return;
+    }
+
+    currentCategory = selected.value;
+    await interaction.update({
+      embeds: [CATEGORY_BUILDERS[currentCategory]()],
+      components: [buildCategoryRow(currentCategory)],
+    });
   });
 
   collector.on("end", async () => {
-    const disabledRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
-      new ButtonBuilder().setCustomId("help_prev").setLabel("◀ Previous").setStyle(ButtonStyle.Secondary).setDisabled(true),
-      new ButtonBuilder().setCustomId("help_page").setLabel(`Page ${currentPage} / ${TOTAL}`).setStyle(ButtonStyle.Primary).setDisabled(true),
-      new ButtonBuilder().setCustomId("help_next").setLabel("Next ▶").setStyle(ButtonStyle.Secondary).setDisabled(true),
-    );
-    await helpMsg.edit({ components: [disabledRow] }).catch(() => {});
+    await helpMsg.edit({ components: [] }).catch(() => {});
   });
 }
