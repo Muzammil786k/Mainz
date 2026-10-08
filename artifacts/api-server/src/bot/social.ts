@@ -512,8 +512,6 @@ export async function handleShip(message: Message): Promise<void> {
 
   const pairKey = [firstUser.id, secondUser.id].sort().join(":");
   const score = seededScore(`ship:${pairKey}`, 0, 100);
-  const filledHearts = Math.round(score / 10);
-  const meter = `${"💖".repeat(filledHearts)}${"🤍".repeat(10 - filledHearts)}`;
   const verdict =
     score >= 90
       ? "Cosmic-level duo energy!"
@@ -527,9 +525,9 @@ export async function handleShip(message: Message): Promise<void> {
 
   const embed = new EmbedBuilder()
     .setColor(0xff72a6)
-    .setTitle("💘 Ship check")
+    .setTitle("Ship check")
     .setDescription(
-      `**${safeDisplayName(firstMember.displayName)} × ${safeDisplayName(secondMember.displayName)}**\n\n${meter} **${score}%**\n${verdict}`,
+      `**${safeDisplayName(firstMember.displayName)} × ${safeDisplayName(secondMember.displayName)}**\n\n**${score}%**\n${verdict}`,
     )
     .setFooter({ text: "Just for fun — not a real compatibility reading." });
 
