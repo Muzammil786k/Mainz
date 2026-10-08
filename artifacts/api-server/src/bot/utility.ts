@@ -191,7 +191,7 @@ export async function handleBotInfo(client: Client, message: Message): Promise<v
           { name: "Uptime", value: formatDuration(client.uptime ?? 0), inline: true },
           { name: "WebSocket", value: `${client.ws.ping}ms`, inline: true },
         )
-        .setFooter({ text: "HangoutSaiBot" })
+        .setFooter({ text: "Use /help to see all commands" })
         .setTimestamp(),
     ],
   });

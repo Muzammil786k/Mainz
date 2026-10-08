@@ -10,7 +10,7 @@ import { premiumColors, premiumEmbed } from "./presentation";
 
 const C = premiumColors.brand;
 const TIMEOUT = 5 * 60_000;
-const HELP_FOOTER = "HangoutSaiBot • Choose a category below to browse commands.";
+const HELP_FOOTER = "Choose a category below to browse commands.";
 const CATEGORIES = [
   { label: "Start & Giveaways", value: "start", description: "Help and giveaway commands" },
   { label: "Moderation", value: "moderation", description: "Warnings, timeouts, kicks, and bans" },

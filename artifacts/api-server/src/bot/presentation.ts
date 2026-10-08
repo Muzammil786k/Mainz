@@ -6,7 +6,7 @@ import {
   type MessageCreateOptions,
 } from "discord.js";
 
-const BRAND = "HangoutSaiBot";
+const FOOTER_TEXT = "Use /help to see all commands";
 const BRAND_COLOR = 0x5865f2;
 const SUCCESS_COLOR = 0x57f287;
 const WARNING_COLOR = 0xfee75c;
@@ -34,17 +34,8 @@ function brandEmbed(value: unknown, user: ClientUser | null, fallbackText: strin
     responseColor(`${fallbackText}\n${data.description ?? ""}`),
   );
 
-  if (!data.author) {
-    const iconURL = user?.displayAvatarURL({ size: 64 });
-    embed.setAuthor(iconURL ? { name: BRAND, iconURL } : { name: BRAND });
-  }
-
   const existingFooter = data.footer?.text?.trim();
-  const footerText = existingFooter
-    ? existingFooter.includes(BRAND)
-      ? existingFooter
-      : `${existingFooter} · ${BRAND}`
-    : `${BRAND} • /help`;
+  const footerText = existingFooter || FOOTER_TEXT;
   const footerIcon = user?.displayAvatarURL({ size: 64 }) ?? data.footer?.icon_url;
   embed.setFooter(footerIcon ? { text: footerText, iconURL: footerIcon } : { text: footerText });
   return embed;
@@ -76,12 +67,7 @@ function styleReplyPayload(
     const embed = new EmbedBuilder()
       .setColor(responseColor(content))
       .setDescription(content.slice(0, 4096))
-      .setFooter(
-        iconURL
-          ? { text: `${BRAND} • /help`, iconURL }
-          : { text: `${BRAND} • /help` },
-      );
-    if (iconURL) embed.setAuthor({ name: BRAND, iconURL });
+      .setFooter(iconURL ? { text: FOOTER_TEXT, iconURL } : { text: FOOTER_TEXT });
     if (clearExistingContent) {
       options.content = null;
     } else {
@@ -138,16 +124,11 @@ export function premiumEmbed(
   const embed = new EmbedBuilder()
     .setColor(options.color ?? responseColor(description))
     .setDescription(description.slice(0, 4096))
-    .setFooter(
-      iconURL
-        ? { text: `${BRAND} • /help`, iconURL }
-        : { text: `${BRAND} • /help` },
-    )
+    .setFooter(iconURL ? { text: FOOTER_TEXT, iconURL } : { text: FOOTER_TEXT })
     .setTimestamp();
 
   if (options.title) embed.setTitle(options.title);
   if (options.thumbnail) embed.setThumbnail(options.thumbnail);
-  if (iconURL) embed.setAuthor({ name: BRAND, iconURL });
   return embed;
 }
 
