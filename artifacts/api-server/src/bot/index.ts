@@ -7,6 +7,7 @@ import {
 } from "discord.js";
 import { handleMessage } from "./commands";
 import { handleSlashCommand, registerSlashCommands } from "./slash";
+import { handleSocialBackButton } from "./social";
 import { giveaways, buildGiveawayEmbed } from "./giveaway";
 import { logger } from "../lib/logger";
 import { processUserMessageAutomations, sendMemberMessage } from "./automation";
@@ -65,6 +66,10 @@ export function createBot(): Client {
   });
 
   client.on("interactionCreate", async (interaction) => {
+    if (interaction.isButton() && interaction.customId.startsWith("social:back:")) {
+      await handleSocialBackButton(interaction);
+      return;
+    }
     if (!interaction.isChatInputCommand()) return;
     await handleSlashCommand(client, interaction);
   });

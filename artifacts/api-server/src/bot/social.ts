@@ -1,4 +1,12 @@
-import { AttachmentBuilder, EmbedBuilder, type Message } from "discord.js";
+import {
+  ActionRowBuilder,
+  AttachmentBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  EmbedBuilder,
+  type ButtonInteraction,
+  type Message,
+} from "discord.js";
 import { logger } from "../lib/logger";
 import { renderShipImage } from "./shipImage";
 
@@ -367,6 +375,53 @@ function safeDisplayName(name: string): string {
   return name.replace(/@/g, "@\u200b");
 }
 
+const SOCIAL_BACK_PREFIX = "social:back:";
+const NON_INTERACTION_ACTIONS: ReadonlySet<string> = new Set([
+  "aura",
+  "rate",
+  "rizz",
+  "vibecheck",
+  "roast",
+  "compliment",
+]);
+const BACK_LABELS: Partial<Record<SocialActionName, string>> = {
+  hug: "Hug back 🫂",
+  kiss: "Kiss back 😘",
+  pat: "Pat back 🐾",
+  slap: "Slap back 🖐️",
+  cuddle: "Cuddle back 🧸",
+  highfive: "High-five back 🙌",
+  wave: "Wave back 👋",
+  poke: "Poke back 👉",
+  boop: "Boop back 👉",
+  bonk: "Bonk back 🔨",
+  tickle: "Tickle back 😆",
+};
+const BACK_NOUNS: Partial<Record<SocialActionName, string>> = {
+  hug: "hug",
+  kiss: "kiss",
+  pat: "pat",
+  slap: "slap",
+  cuddle: "cuddle",
+  highfive: "high-five",
+  wave: "wave",
+  poke: "poke",
+  boop: "boop",
+  bonk: "bonk",
+  tickle: "tickle",
+};
+
+function isSocialActionName(name: string): name is SocialActionName {
+  return Object.prototype.hasOwnProperty.call(SOCIAL_ACTIONS, name);
+}
+
+function supportsBackButton(actionName: string): boolean {
+  return isSocialActionName(actionName) && !NON_INTERACTION_ACTIONS.has(actionName);
+}
+
+// Message IDs whose "back" button is currently being processed, to prevent double-clicks.
+const pendingBackMessageIds = new Set<string>();
+
 interface NekoGifResult {
   anime_name?: unknown;
   url?: unknown;
@@ -469,10 +524,115 @@ export async function handleSocialAction(message: Message, actionName: SocialAct
 
   if (gif) embed.setImage(gif.url);
 
+  const components: ActionRowBuilder<ButtonBuilder>[] = [];
+  if (supportsBackButton(actionName) && target.id !== message.author.id && !target.user.bot) {
+    const customId = `${SOCIAL_BACK_PREFIX}${actionName}:${message.author.id}:${target.id}`;
+    if (customId.length <= 100) {
+      const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder()
+          .setCustomId(customId)
+          .setLabel(BACK_LABELS[actionName] ?? "Send back")
+          .setStyle(ButtonStyle.Primary),
+      );
+      components.push(row);
+    }
+  }
+
   await message.reply({
     embeds: [embed],
+    ...(components.length > 0 ? { components } : {}),
     allowedMentions: { parse: [], repliedUser: false },
   });
+}
+
+export async function handleSocialBackButton(interaction: ButtonInteraction): Promise<void> {
+  const [actionName, originalActorId, originalTargetId] = interaction.customId
+    .slice(SOCIAL_BACK_PREFIX.length)
+    .split(":");
+
+  try {
+    if (!actionName || !originalActorId || !originalTargetId) {
+      await interaction.reply({ content: "❌ This button is no longer valid.", ephemeral: true });
+      return;
+    }
+
+    if (interaction.user.id !== originalTargetId) {
+      const noun = isSocialActionName(actionName) ? (BACK_NOUNS[actionName] ?? "reaction") : "reaction";
+      await interaction.reply({
+        content: `Only the person who was targeted can send a ${noun} back.`,
+        ephemeral: true,
+      });
+      return;
+    }
+
+    if (!isSocialActionName(actionName) || !supportsBackButton(actionName)) {
+      await interaction.reply({ content: "❌ This action can't be sent back.", ephemeral: true });
+      return;
+    }
+
+    const guild = interaction.guild;
+    if (!guild) {
+      await interaction.reply({ content: "❌ This button only works in a server.", ephemeral: true });
+      return;
+    }
+
+    if (pendingBackMessageIds.has(interaction.message.id)) {
+      await interaction.reply({ content: "⏳ That's already being sent back.", ephemeral: true });
+      return;
+    }
+    pendingBackMessageIds.add(interaction.message.id);
+
+    try {
+      const [clicker, original] = await Promise.all([
+        guild.members.cache.get(originalTargetId) ?? guild.members.fetch(originalTargetId).catch(() => null),
+        guild.members.cache.get(originalActorId) ?? guild.members.fetch(originalActorId).catch(() => null),
+      ]);
+      if (!clicker || !original) {
+        await interaction.reply({ content: "❌ I couldn’t find both members in this server.", ephemeral: true });
+        return;
+      }
+
+      // Acknowledge within 3 seconds; the GIF fetch can be slow.
+      await interaction.deferReply();
+
+      const action = SOCIAL_ACTIONS[actionName];
+      const gif = await fetchAnimeGif(action.gifCategory);
+      const embed = new EmbedBuilder()
+        .setColor(0x2b2d31)
+        .setDescription(
+          `${action.render(
+            safeDisplayName(clicker.displayName),
+            safeDisplayName(original.displayName),
+            original.id,
+          )}${gif ? "" : "\n\n🎞️ Anime GIF is temporarily unavailable."}`,
+        )
+        .setFooter({ text: "Just for fun — keep it friendly." });
+      if (gif) embed.setImage(gif.url);
+
+      // Remove the button from the original message so it can only be used once.
+      await interaction.message.edit({ components: [] }).catch((err) => {
+        logger.warn({ err }, "Could not remove social back button");
+      });
+
+      await interaction.editReply({
+        embeds: [embed],
+        allowedMentions: { parse: [] },
+      });
+    } finally {
+      pendingBackMessageIds.delete(interaction.message.id);
+    }
+  } catch (err) {
+    logger.error({ err, customId: interaction.customId }, "Error handling social back button");
+    const content = "❌ Something went wrong sending that back.";
+    if (interaction.deferred && !interaction.replied) {
+      await interaction.deleteReply().catch(() => {});
+      await interaction.followUp({ content, ephemeral: true }).catch(() => {});
+    } else if (interaction.replied) {
+      await interaction.followUp({ content, ephemeral: true }).catch(() => {});
+    } else {
+      await interaction.reply({ content, ephemeral: true }).catch(() => {});
+    }
+  }
 }
 
 export async function handleShip(message: Message): Promise<void> {
