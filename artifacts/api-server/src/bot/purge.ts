@@ -5,7 +5,7 @@ async function deleteConfirm(message: Message, deleted: number, label: string): 
   const reply = await (message.channel as TextChannel).send(premiumMessagePayload({
     embeds: [
       new EmbedBuilder()
-        .setColor(0x57f287)
+        .setColor(0x2b2d31)
         .setDescription(`✅ Deleted **${deleted}** ${label} message${deleted !== 1 ? "s" : ""}.`),
     ],
   }, message.client?.user ?? null));
@@ -20,7 +20,7 @@ export async function handlePurge(message: Message): Promise<void> {
     await message.reply({
       embeds: [
         new EmbedBuilder()
-          .setColor(0xff0000)
+          .setColor(0x2b2d31)
           .setDescription("❌ You need **Manage Messages** permission to use this command."),
       ],
     });
@@ -34,7 +34,7 @@ export async function handlePurge(message: Message): Promise<void> {
     await message.reply({
       embeds: [
         new EmbedBuilder()
-          .setColor(0xff0000)
+          .setColor(0x2b2d31)
           .setDescription("❌ Please provide a number between **1** and **100**.\n**Usage:** `!purge <amount>`"),
       ],
     });
@@ -59,7 +59,7 @@ export async function handlePurgeBot(message: Message): Promise<void> {
     await message.reply({
       embeds: [
         new EmbedBuilder()
-          .setColor(0xff0000)
+          .setColor(0x2b2d31)
           .setDescription("❌ You need **Manage Messages** permission to use this command."),
       ],
     });
