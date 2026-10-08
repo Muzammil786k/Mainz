@@ -461,7 +461,6 @@ export async function handleSocialAction(message: Message, actionName: SocialAct
   const targetName = safeDisplayName(target.displayName);
   const embed = new EmbedBuilder()
     .setColor(0x2b2d31)
-    .setTitle(action.title)
     .setDescription(
       `${action.render(actorName, targetName, target.id)}${gif ? "" : "\n\n🎞️ Anime GIF is temporarily unavailable."}`,
     )
