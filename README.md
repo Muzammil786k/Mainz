@@ -1,4 +1,4 @@
-# HangoutSaiBot
+# Mainz
 
 A Discord moderation, utility, giveaway, and Word Bomb bot.
 

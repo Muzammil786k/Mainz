@@ -386,7 +386,7 @@ async function fetchAnimeGif(category: string): Promise<{ url: string; animeName
     const response = await fetch(endpoint, {
       headers: {
         Accept: "application/json",
-        "User-Agent": "HangoutSaiBot (https://github.com/Muzammil786k/Mainz)",
+        "User-Agent": "Mainz (https://github.com/Muzammil786k/Mainz)",
       },
       signal: AbortSignal.timeout(5_000),
     });
