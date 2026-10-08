@@ -23,7 +23,7 @@ export async function handleNoPrefix(message: Message): Promise<void> {
     await message.reply({
       embeds: [
         new EmbedBuilder()
-          .setColor(0xff0000)
+          .setColor(0x2b2d31)
           .setDescription("❌ You need **Manage Server** permission to configure no-prefix."),
       ],
     });
@@ -38,7 +38,7 @@ export async function handleNoPrefix(message: Message): Promise<void> {
     await message.reply({
       embeds: [
         new EmbedBuilder()
-          .setColor(0x57f287)
+          .setColor(0x2b2d31)
           .setDescription("✅ No-prefix role has been **removed**. All users must use `!` prefix again."),
       ],
     });
@@ -51,7 +51,7 @@ export async function handleNoPrefix(message: Message): Promise<void> {
     await message.reply({
       embeds: [
         new EmbedBuilder()
-          .setColor(0x5865f2)
+          .setColor(0x2b2d31)
           .setTitle("⚡ No Prefix")
           .setDescription(
             current
@@ -68,7 +68,7 @@ export async function handleNoPrefix(message: Message): Promise<void> {
   await message.reply({
     embeds: [
       new EmbedBuilder()
-        .setColor(0x57f287)
+        .setColor(0x2b2d31)
         .setDescription(
           `✅ No-prefix role set to <@&${role.id}>.\nMembers with this role can now use commands **without** the \`!\` prefix.`
         ),

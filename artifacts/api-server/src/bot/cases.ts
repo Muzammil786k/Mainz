@@ -9,7 +9,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { join } from "path";
 import { premiumMessagePayload } from "./presentation";
 
-const C = 0xff0000;
+const C = 0x2b2d31;
 const DATA_DIR = join(process.cwd(), "data");
 const CASES_FILE = join(DATA_DIR, "cases.json");
 const MODLOG_FILE = join(DATA_DIR, "modlog.json");
@@ -110,12 +110,12 @@ export function getRecentCases(
 // ─── Log Case to Modlog Channel ───────────────────────────────────────────────
 
 const CASE_COLORS: Record<CaseType, number> = {
-  WARN:   0xffa500,
-  MUTE:   0xff6600,
-  UNMUTE: 0x57f287,
-  KICK:   0xff4444,
-  BAN:    0xff0000,
-  UNBAN:  0x57f287,
+  WARN:   0x2b2d31,
+  MUTE:   0x2b2d31,
+  UNMUTE: 0x2b2d31,
+  KICK:   0x2b2d31,
+  BAN:    0x2b2d31,
+  UNBAN:  0x2b2d31,
 };
 
 const CASE_EMOJIS: Record<CaseType, string> = {

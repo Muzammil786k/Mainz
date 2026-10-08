@@ -34,7 +34,7 @@ export async function handleAfk(message: Message, transformedContent?: string): 
     await message.reply({
       embeds: [
         new EmbedBuilder()
-          .setColor(0xff0000)
+          .setColor(0x2b2d31)
           .setDescription(`👋 <@${userId}>: Welcome back, you were away for **${away}**`),
       ],
       allowedMentions: { users: [userId] },
@@ -53,7 +53,7 @@ export async function handleAfk(message: Message, transformedContent?: string): 
     await message.reply({
       embeds: [
         new EmbedBuilder()
-          .setColor(0xff0000)
+          .setColor(0x2b2d31)
           .setDescription(`✅ <@${userId}>: You're now AFK with the status: **${status}**`),
       ],
       allowedMentions: { users: [userId] },
@@ -68,7 +68,7 @@ export async function handleAfk(message: Message, transformedContent?: string): 
       await message.reply({
         embeds: [
           new EmbedBuilder()
-            .setColor(0xff0000)
+            .setColor(0x2b2d31)
             .setDescription(`💤 <@${mentionedUser.id}> is AFK: **${entry.status}** — ${away} ago`),
         ],
         allowedMentions: { users: [] },

@@ -20,7 +20,7 @@ export async function handleWarn(client: Client, message: Message): Promise<void
   const member = message.guild.members.cache.get(message.author.id);
   if (!member?.permissions.has(PermissionFlagsBits.ManageGuild)) {
     await message.reply({
-      embeds: [new EmbedBuilder().setColor(0xff0000).setDescription("❌ You need the **Manage Server** permission to warn members.")],
+      embeds: [new EmbedBuilder().setColor(0x2b2d31).setDescription("❌ You need the **Manage Server** permission to warn members.")],
     });
     return;
   }
@@ -30,7 +30,7 @@ export async function handleWarn(client: Client, message: Message): Promise<void
     await message.reply({
       embeds: [
         new EmbedBuilder()
-          .setColor(0xff0000)
+          .setColor(0x2b2d31)
           .setTitle("Command: !warn")
           .setDescription("**Usage:** `!warn @user [reason]`\n**Example:** `!warn @NoobLance Stop posting lewd images`"),
       ],
@@ -40,15 +40,15 @@ export async function handleWarn(client: Client, message: Message): Promise<void
 
   const target = message.mentions.members?.first() ?? message.guild.members.cache.get(args[0]);
   if (!target) {
-    await message.reply({ embeds: [new EmbedBuilder().setColor(0xff0000).setDescription("❌ Could not find that member.")] });
+    await message.reply({ embeds: [new EmbedBuilder().setColor(0x2b2d31).setDescription("❌ Could not find that member.")] });
     return;
   }
   if (target.user.bot) {
-    await message.reply({ embeds: [new EmbedBuilder().setColor(0xff0000).setDescription("❌ You cannot warn a bot.")] });
+    await message.reply({ embeds: [new EmbedBuilder().setColor(0x2b2d31).setDescription("❌ You cannot warn a bot.")] });
     return;
   }
   if (target.id === message.author.id) {
-    await message.reply({ embeds: [new EmbedBuilder().setColor(0xff0000).setDescription("❌ You cannot warn yourself.")] });
+    await message.reply({ embeds: [new EmbedBuilder().setColor(0x2b2d31).setDescription("❌ You cannot warn yourself.")] });
     return;
   }
 
@@ -69,14 +69,14 @@ export async function handleWarn(client: Client, message: Message): Promise<void
   });
 
   await message.reply({
-    embeds: [new EmbedBuilder().setColor(0x57f287).setDescription(`✅ **${target.user.username}** has been warned. | Case **#${c.id}** | Total warnings: **${totalWarnings}**`)],
+    embeds: [new EmbedBuilder().setColor(0x2b2d31).setDescription(`✅ **${target.user.username}** has been warned. | Case **#${c.id}** | Total warnings: **${totalWarnings}**`)],
   });
 
   try {
     await target.send(premiumMessagePayload({
       embeds: [
         new EmbedBuilder()
-          .setColor(0xff0000)
+          .setColor(0x2b2d31)
           .setTitle(`⚠️ You were warned in ${message.guild.name}`)
           .addFields(
             { name: "Reason", value: reason },
@@ -94,14 +94,14 @@ export async function handleWarnings(message: Message): Promise<void> {
 
   const member = message.guild.members.cache.get(message.author.id);
   if (!member?.permissions.has(PermissionFlagsBits.ManageGuild)) {
-    await message.reply({ embeds: [new EmbedBuilder().setColor(0xff0000).setDescription("❌ You need the **Manage Server** permission to view warnings.")] });
+    await message.reply({ embeds: [new EmbedBuilder().setColor(0x2b2d31).setDescription("❌ You need the **Manage Server** permission to view warnings.")] });
     return;
   }
 
   const args = message.content.trim().split(/\s+/).slice(1);
   const target = message.mentions.members?.first() ?? (args[0] ? message.guild.members.cache.get(args[0]) : null);
   if (!target) {
-    await message.reply({ embeds: [new EmbedBuilder().setColor(0xff0000).setDescription("❌ Please mention a member or provide their ID.\nUsage: `!warnings @user`")] });
+    await message.reply({ embeds: [new EmbedBuilder().setColor(0x2b2d31).setDescription("❌ Please mention a member or provide their ID.\nUsage: `!warnings @user`")] });
     return;
   }
 
@@ -109,7 +109,7 @@ export async function handleWarnings(message: Message): Promise<void> {
   const userWarnings = warnings.get(key) ?? [];
 
   if (userWarnings.length === 0) {
-    await message.reply({ embeds: [new EmbedBuilder().setColor(0xff0000).setDescription(`✅ <@${target.id}> has no warnings.`)] });
+    await message.reply({ embeds: [new EmbedBuilder().setColor(0x2b2d31).setDescription(`✅ <@${target.id}> has no warnings.`)] });
     return;
   }
 
@@ -121,7 +121,7 @@ export async function handleWarnings(message: Message): Promise<void> {
   await message.reply({
     embeds: [
       new EmbedBuilder()
-        .setColor(0xff0000)
+        .setColor(0x2b2d31)
         .setTitle(`⚠️ Warnings for ${target.user.username}`)
         .setDescription(list)
         .setFooter({ text: `Total warnings: ${userWarnings.length}` })
@@ -135,21 +135,21 @@ export async function handleClearWarnings(message: Message): Promise<void> {
 
   const member = message.guild.members.cache.get(message.author.id);
   if (!member?.permissions.has(PermissionFlagsBits.ManageGuild)) {
-    await message.reply({ embeds: [new EmbedBuilder().setColor(0xff0000).setDescription("❌ You need the **Manage Server** permission to clear warnings.")] });
+    await message.reply({ embeds: [new EmbedBuilder().setColor(0x2b2d31).setDescription("❌ You need the **Manage Server** permission to clear warnings.")] });
     return;
   }
 
   const args = message.content.trim().split(/\s+/).slice(1);
   const target = message.mentions.members?.first() ?? (args[0] ? message.guild.members.cache.get(args[0]) : null);
   if (!target) {
-    await message.reply({ embeds: [new EmbedBuilder().setColor(0xff0000).setDescription("❌ Usage: `!clearwarnings @user`")] });
+    await message.reply({ embeds: [new EmbedBuilder().setColor(0x2b2d31).setDescription("❌ Usage: `!clearwarnings @user`")] });
     return;
   }
 
   const key = getKey(message.guild.id, target.id);
   warnings.delete(key);
 
-  await message.reply({ embeds: [new EmbedBuilder().setColor(0xff0000).setDescription(`✅ Cleared all warnings for <@${target.id}>.`)] });
+  await message.reply({ embeds: [new EmbedBuilder().setColor(0x2b2d31).setDescription(`✅ Cleared all warnings for <@${target.id}>.`)] });
 }
 
 export { warnings };
