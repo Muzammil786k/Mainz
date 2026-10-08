@@ -12,7 +12,7 @@ import {
 import { logCase } from "./cases";
 import { premiumEmbed, premiumMessagePayload } from "./presentation";
 
-const C = 0xff0000;
+const C = 0x2b2d31;
 
 // ─── Kick ──────────────────────────────────────────────────────────────────────
 
