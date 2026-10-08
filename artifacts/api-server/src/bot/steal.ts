@@ -12,6 +12,7 @@ import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import sharp from "sharp";
 import { logger } from "../lib/logger";
+import { premiumEmbed } from "./presentation";
 
 type AssetKind = "emoji" | "sticker";
 
@@ -440,13 +441,28 @@ export async function handleSteal(message: Message): Promise<void> {
   collector.on("collect", async (interaction) => {
     if (interaction.user.id !== message.author.id) {
       await interaction.reply({
-        content: "Only the person who ran `!steal` can choose how to add this asset.",
+        embeds: [
+          premiumEmbed(
+            "Only the person who ran `!steal` can choose how to add this asset.",
+            { title: "Emoji & sticker import" },
+            message.client?.user ?? null,
+          ),
+        ],
         ephemeral: true,
       });
       return;
     }
     if (isAdding) {
-      await interaction.reply({ content: "This asset is already being added.", ephemeral: true });
+      await interaction.reply({
+        embeds: [
+          premiumEmbed(
+            "This asset is already being added.",
+            { title: "Emoji & sticker import" },
+            message.client?.user ?? null,
+          ),
+        ],
+        ephemeral: true,
+      });
       return;
     }
 

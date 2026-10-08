@@ -3,9 +3,11 @@ import {
   PermissionFlagsBits,
   type Client,
   type Message,
+  type MessageCreateOptions,
   type TextChannel,
 } from "discord.js";
 import { createRequire } from "node:module";
+import { premiumColors, premiumMessagePayload } from "./presentation";
 
 const _require = createRequire(import.meta.url);
 const _wordList: string[] = _require("an-array-of-english-words");
@@ -38,8 +40,15 @@ const TRIGRAMS = [
 const LIVES = 3;
 const LOBBY_TIME = 30_000;
 const TURN_TIME = 10_000;
-const EMBED_COLOR = 0xff0000;
+const EMBED_COLOR = premiumColors.brand;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+async function sendPremium(
+  channel: TextChannel,
+  payload: string | MessageCreateOptions,
+) {
+  return channel.send(premiumMessagePayload(payload, channel.client.user));
+}
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
@@ -92,7 +101,7 @@ async function runTurn(
 ): Promise<boolean> {
   let resolved = false;
 
-  await channel.send({
+  await sendPremium(channel, {
     content: `<@${currentId}>`,
     embeds: [
       new EmbedBuilder()
@@ -122,7 +131,14 @@ async function runTurn(
 
       if (!word.includes(trigram.toLowerCase())) {
         await m.react("❌").catch(() => {});
-        await m.reply(`❌ **${word}** doesn't contain **\`${trigram.toUpperCase()}\`**!`).catch(() => {});
+          await m
+            .reply(
+              premiumMessagePayload(
+                `❌ **${word}** doesn't contain **\`${trigram.toUpperCase()}\`**!`,
+                m.client.user,
+              ),
+            )
+            .catch(() => {});
         return;
       }
 
@@ -169,7 +185,7 @@ async function runGame(channel: TextChannel, state: GameState, guildId: string):
       if (winnerId) {
         addWin(guildId, winnerId);
         const name = await getDisplayName(channel, winnerId);
-        await channel.send({
+        await sendPremium(channel, {
           embeds: [
             new EmbedBuilder()
               .setColor(EMBED_COLOR)
@@ -177,7 +193,7 @@ async function runGame(channel: TextChannel, state: GameState, guildId: string):
           ],
         });
       } else {
-        await channel.send({
+        await sendPremium(channel, {
           embeds: [
             new EmbedBuilder()
               .setColor(EMBED_COLOR)
@@ -207,7 +223,7 @@ async function runGame(channel: TextChannel, state: GameState, guildId: string):
       if (remaining <= 0) {
         state.eliminated.add(currentId);
         const name = await getDisplayName(channel, currentId);
-        await channel.send({
+        await sendPremium(channel, {
           embeds: [
             new EmbedBuilder()
               .setColor(EMBED_COLOR)
@@ -215,7 +231,7 @@ async function runGame(channel: TextChannel, state: GameState, guildId: string):
           ],
         });
       } else {
-        await channel.send({
+        await sendPremium(channel, {
           embeds: [
             new EmbedBuilder()
               .setColor(EMBED_COLOR)
@@ -243,7 +259,7 @@ export async function handleWordbomb(client: Client, message: Message): Promise<
 
   const channel = message.channel as TextChannel;
 
-  const lobbyMsg = await channel.send({
+  const lobbyMsg = await sendPremium(channel, {
     embeds: [
       new EmbedBuilder()
         .setColor(EMBED_COLOR)
@@ -265,7 +281,7 @@ export async function handleWordbomb(client: Client, message: Message): Promise<
     : [];
 
   if (reactedUsers.length < 2) {
-    await channel.send({
+    await sendPremium(channel, {
       embeds: [
         new EmbedBuilder()
           .setColor(EMBED_COLOR)
@@ -301,7 +317,7 @@ export async function handleWordbomb(client: Client, message: Message): Promise<
     .map((id) => `${livesBar(LIVES)} @${displayNames.get(id) ?? id}`)
     .join("\n");
 
-  await channel.send({
+  await sendPremium(channel, {
     embeds: [
       new EmbedBuilder()
         .setColor(EMBED_COLOR)

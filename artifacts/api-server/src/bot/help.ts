@@ -6,14 +6,16 @@ import {
   type Message,
 } from "discord.js";
 import { SOCIAL_ACTIONS, type SocialActionName } from "./social";
+import { premiumColors, premiumEmbed } from "./presentation";
 
-const C = 0x2b2d31;
+const C = premiumColors.brand;
 const TIMEOUT = 5 * 60_000;
-const HELP_FOOTER = "Choose a category below to browse commands.";
+const HELP_FOOTER = "HangoutSaiBot • Choose a category below to browse commands.";
 const CATEGORIES = [
   { label: "Start & Giveaways", value: "start", description: "Help and giveaway commands" },
   { label: "Moderation", value: "moderation", description: "Warnings, timeouts, kicks, and bans" },
   { label: "Cases & Server Controls", value: "controls", description: "Cases, roles, channels, and announcements" },
+  { label: "Automation", value: "automation", description: "Auto-reactions, sticky, welcome, goodbye" },
   { label: "Server & Utility", value: "utility", description: "Server info, members, and bot tools" },
   { label: "Games", value: "games", description: "Word Bomb and game commands" },
   { label: "Social: Friendly", value: "friendly", description: "Hugs, cheers, compliments, and more" },
@@ -91,6 +93,25 @@ function page4(): EmbedBuilder {
       { name: "`!channelinfo` • `/channelinfo`", value: "Show current channel ID, type, category, and creation time." },
       { name: "`!avatar [@user]` • `/avatar`", value: "Show a member's avatar in high resolution." },
       { name: "`!steal` (reply to an emoji or sticker)", value: "Choose to add an emoji or PNG/APNG/GIF sticker from the replied-to message as a server emoji or sticker. Lottie stickers are converted to a still image. Requires **Create Expressions** permission and an available slot." },
+    )
+    .setFooter({ text: HELP_FOOTER });
+}
+
+function pageAutomation(): EmbedBuilder {
+  return new EmbedBuilder()
+    .setColor(C)
+    .setTitle("⚙️ Help • Automation")
+    .setDescription("Configure these features with **Manage Server** permission.")
+    .addFields(
+      { name: "`!autoreact set #channel <:emoji:id>` • `/autoreact set`", value: "React to every new message in that channel with one custom emoji from this server." },
+      { name: "`!autoreact status #channel` • `/autoreact status`", value: "Show the active reaction for a channel." },
+      { name: "`!autoreact remove #channel` • `/autoreact remove`", value: "Turn off auto-react for a channel." },
+      { name: "`!sticky set #channel <message>` • `/sticky set`", value: "Keep one branded message at the bottom of a channel. It moves after new messages." },
+      { name: "`!sticky remove #channel` • `/sticky remove`", value: "Remove the sticky message and stop reposting it." },
+      { name: "`!welcome set #channel <message>` • `/welcome set`", value: "Post a branded welcome when a member joins. Use `{user}`, `{server}`, or `{memberCount}`." },
+      { name: "`!welcome remove` • `/welcome remove`", value: "Turn off welcome messages." },
+      { name: "`!goodbye set #channel <message>` • `/goodbye set`", value: "Post a branded goodbye when a member leaves. Supports the same placeholders." },
+      { name: "`!goodbye remove` • `/goodbye remove`", value: "Turn off goodbye messages." },
     )
     .setFooter({ text: HELP_FOOTER });
 }
@@ -179,6 +200,7 @@ const CATEGORY_BUILDERS: Record<CategoryId, () => EmbedBuilder> = {
   start: page1,
   moderation: page2,
   controls: page3,
+  automation: pageAutomation,
   utility: page4,
   games: page5,
   friendly: () => socialCategory("Social: Friendly", FRIENDLY_ACTIONS),
@@ -218,7 +240,13 @@ export async function handleHelp(message: Message): Promise<void> {
   collector.on("collect", async (interaction) => {
     if (interaction.user.id !== message.author.id) {
       await interaction.reply({
-        content: "Only the person who opened this help menu can change its category.",
+        embeds: [
+          premiumEmbed(
+            "Only the person who opened this help menu can change its category.",
+            { title: "Help menu" },
+            message.client?.user,
+          ),
+        ],
         ephemeral: true,
       });
       return;

@@ -1,13 +1,14 @@
 import { EmbedBuilder, PermissionFlagsBits, type Message, type TextChannel } from "discord.js";
+import { premiumMessagePayload } from "./presentation";
 
 async function deleteConfirm(message: Message, deleted: number, label: string): Promise<void> {
-  const reply = await (message.channel as TextChannel).send({
+  const reply = await (message.channel as TextChannel).send(premiumMessagePayload({
     embeds: [
       new EmbedBuilder()
         .setColor(0x57f287)
         .setDescription(`✅ Deleted **${deleted}** ${label} message${deleted !== 1 ? "s" : ""}.`),
     ],
-  });
+  }, message.client?.user ?? null));
   setTimeout(() => reply.delete().catch(() => {}), 4000);
 }
 

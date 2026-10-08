@@ -28,12 +28,20 @@ import {
 import { handleSetModlog, handleCaseLookup, handleCaseList } from "./cases";
 import { handleShip, handleSocialAction, SOCIAL_ACTIONS, type SocialActionName } from "./social";
 import { handleSteal } from "./steal";
+import {
+  handleAutoReactCommand,
+  handleGoodbyeCommand,
+  handleStickyCommand,
+  handleWelcomeCommand,
+} from "./automation-commands";
+import { withPremiumReplies } from "./presentation";
 
 const PREFIX = "g";
 
-export async function handleMessage(client: Client, message: Message): Promise<void> {
-  if (message.author.bot) return;
-  if (!message.guild) return;
+export async function handleMessage(client: Client, incomingMessage: Message): Promise<void> {
+  if (incomingMessage.author.bot) return;
+  if (!incomingMessage.guild) return;
+  const message = withPremiumReplies(incomingMessage, client.user);
 
   const raw = message.content.trim();
   const noPrefix = hasNoPrefix(message);
@@ -56,6 +64,16 @@ export async function handleMessage(client: Client, message: Message): Promise<v
   // ── Help ──────────────────────────────────────────────────────────────────
   } else if (lower === `!${PREFIX}help` || lower === "!help") {
     await handleHelp(message);
+
+  // ── Channel Automations ────────────────────────────────────────────────────
+  } else if (lower === "!autoreact" || lower.startsWith("!autoreact ")) {
+    await handleAutoReactCommand(message);
+  } else if (lower === "!sticky" || lower.startsWith("!sticky ")) {
+    await handleStickyCommand(client, message);
+  } else if (lower === "!welcome" || lower.startsWith("!welcome ")) {
+    await handleWelcomeCommand(message);
+  } else if (lower === "!goodbye" || lower.startsWith("!goodbye ")) {
+    await handleGoodbyeCommand(message);
 
   // ── Moderation ────────────────────────────────────────────────────────────
   } else if (lower === "!warn" || lower.startsWith("!warn ")) {

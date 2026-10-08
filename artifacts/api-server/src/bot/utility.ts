@@ -5,6 +5,7 @@ import {
   type TextChannel,
   type Client,
 } from "discord.js";
+import { premiumMessagePayload } from "./presentation";
 
 const C = 0xff0000;
 
@@ -335,7 +336,7 @@ export async function handleAnnounce(message: Message): Promise<void> {
     return;
   }
 
-  await targetChannel.send({
+  await targetChannel.send(premiumMessagePayload({
     embeds: [
       new EmbedBuilder()
         .setColor(C)
@@ -343,7 +344,7 @@ export async function handleAnnounce(message: Message): Promise<void> {
         .setFooter({ text: `Announced by ${message.author.username}` })
         .setTimestamp(),
     ],
-  });
+  }, message.client?.user ?? null));
 
   await message.reply({ embeds: [new EmbedBuilder().setColor(C).setDescription(`✅ Announcement sent to ${targetChannel}.`)] });
 }

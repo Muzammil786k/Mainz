@@ -12,6 +12,8 @@ import {
 import { handleMessage } from "./commands";
 import { logger } from "../lib/logger";
 import { SOCIAL_ACTION_NAMES, SOCIAL_ACTIONS } from "./social";
+import { bumpStickyForChannel } from "./automation";
+import { premiumEmbed } from "./presentation";
 
 const slashCommands = [
   new SlashCommandBuilder()
@@ -150,6 +152,70 @@ const slashCommands = [
     .addChannelOption((o) => o.setName("channel").setDescription("Target channel").addChannelTypes(ChannelType.GuildText).setRequired(true))
     .addStringOption((o) => o.setName("message").setDescription("Announcement text").setRequired(true)),
   new SlashCommandBuilder()
+    .setName("autoreact")
+    .setDescription("Configure automatic emoji reactions in a channel.")
+    .addSubcommand((sub) =>
+      sub
+        .setName("set")
+        .setDescription("React to every message in a channel.")
+        .addChannelOption((o) => o.setName("channel").setDescription("Text channel").addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setRequired(true))
+        .addStringOption((o) => o.setName("emoji").setDescription("Custom emoji from this server").setRequired(true)),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("remove")
+        .setDescription("Turn off automatic reactions in a channel.")
+        .addChannelOption((o) => o.setName("channel").setDescription("Text channel").addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setRequired(true)),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("status")
+        .setDescription("Show the automatic reaction for a channel.")
+        .addChannelOption((o) => o.setName("channel").setDescription("Text channel").addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setRequired(true)),
+    ),
+  new SlashCommandBuilder()
+    .setName("sticky")
+    .setDescription("Keep one message at the bottom of a channel.")
+    .addSubcommand((sub) =>
+      sub
+        .setName("set")
+        .setDescription("Set or replace the sticky message.")
+        .addChannelOption((o) => o.setName("channel").setDescription("Text channel").addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setRequired(true))
+        .addStringOption((o) => o.setName("message").setDescription("Sticky text").setMaxLength(1500).setRequired(true)),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("remove")
+        .setDescription("Remove the sticky message from a channel.")
+        .addChannelOption((o) => o.setName("channel").setDescription("Text channel").addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setRequired(true)),
+    ),
+  new SlashCommandBuilder()
+    .setName("welcome")
+    .setDescription("Configure server welcome messages.")
+    .addSubcommand((sub) =>
+      sub
+        .setName("set")
+        .setDescription("Set a welcome message and channel.")
+        .addChannelOption((o) => o.setName("channel").setDescription("Text channel").addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setRequired(true))
+        .addStringOption((o) => o.setName("message").setDescription("Message text").setMaxLength(1800).setRequired(true)),
+    )
+    .addSubcommand((sub) =>
+      sub.setName("remove").setDescription("Turn off welcome messages."),
+    ),
+  new SlashCommandBuilder()
+    .setName("goodbye")
+    .setDescription("Configure server goodbye messages.")
+    .addSubcommand((sub) =>
+      sub
+        .setName("set")
+        .setDescription("Set a goodbye message and channel.")
+        .addChannelOption((o) => o.setName("channel").setDescription("Text channel").addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setRequired(true))
+        .addStringOption((o) => o.setName("message").setDescription("Message text").setMaxLength(1800).setRequired(true)),
+    )
+    .addSubcommand((sub) =>
+      sub.setName("remove").setDescription("Turn off goodbye messages."),
+    ),
+  new SlashCommandBuilder()
     .setName("wordbomb")
     .setDescription("Start a Word Bomb game."),
   new SlashCommandBuilder()
@@ -174,6 +240,20 @@ const slashCommands = [
 function mentionContent(interaction: ChatInputCommandInteraction, optionName: string, fallback = ""): string {
   const user = interaction.options.getUser(optionName);
   return user ? `<@${user.id}>` : fallback;
+}
+
+function automationCommandContent(
+  interaction: ChatInputCommandInteraction,
+  command: "autoreact" | "sticky" | "welcome" | "goodbye",
+): string {
+  const action = interaction.options.getSubcommand(false) ?? "set";
+  const channel = interaction.options.getChannel("channel");
+  const channelText = channel ? `<#${channel.id}>` : "";
+  const value =
+    interaction.options.getString("emoji") ??
+    interaction.options.getString("message") ??
+    "";
+  return `!${command} ${action} ${channelText} ${value}`.trim();
 }
 
 function buildLegacyContent(interaction: ChatInputCommandInteraction): string {
@@ -245,6 +325,11 @@ function buildLegacyContent(interaction: ChatInputCommandInteraction): string {
       const channel = interaction.options.getChannel("channel");
       return `!announce ${channel ? `<#${channel.id}>` : ""} ${string("message")}`.trim();
     }
+    case "autoreact":
+    case "sticky":
+    case "welcome":
+    case "goodbye":
+      return automationCommandContent(interaction, name);
     default:
       return `!${name}`;
   }
@@ -319,7 +404,16 @@ export async function registerSlashCommands(client: Client): Promise<void> {
 
 export async function handleSlashCommand(client: Client, interaction: ChatInputCommandInteraction): Promise<void> {
   if (!interaction.guild) {
-    await interaction.reply({ content: "❌ This command can only be used inside a server.", ephemeral: true });
+    await interaction.reply({
+      embeds: [
+        premiumEmbed(
+          "❌ This command can only be used inside a server.",
+          { title: "Server only" },
+          client.user,
+        ),
+      ],
+      ephemeral: true,
+    });
     return;
   }
 
@@ -331,16 +425,43 @@ export async function handleSlashCommand(client: Client, interaction: ChatInputC
     const content = buildLegacyContent(interaction);
     const message = createMessageAdapter(interaction, content);
     await handleMessage(client, message);
+    await bumpStickyForChannel(client, interaction.guild.id, interaction.channelId);
   } catch (err) {
     logger.error({ err, command: interaction.commandName }, "Error handling slash command");
     if (interaction.deferred && !interaction.replied) {
       await interaction
-        .editReply({ content: "❌ Something went wrong while running that command." })
+        .editReply({
+          embeds: [
+            premiumEmbed(
+              "❌ Something went wrong while running that command.",
+              { title: "Command error" },
+              client.user,
+            ),
+          ],
+        })
         .catch(() => {});
     } else if (interaction.replied) {
-      await interaction.followUp({ content: "❌ Something went wrong while running that command.", ephemeral: true }).catch(() => {});
+      await interaction.followUp({
+        embeds: [
+          premiumEmbed(
+            "❌ Something went wrong while running that command.",
+            { title: "Command error" },
+            client.user,
+          ),
+        ],
+        ephemeral: true,
+      }).catch(() => {});
     } else {
-      await interaction.reply({ content: "❌ Something went wrong while running that command.", ephemeral: true }).catch(() => {});
+      await interaction.reply({
+        embeds: [
+          premiumEmbed(
+            "❌ Something went wrong while running that command.",
+            { title: "Command error" },
+            client.user,
+          ),
+        ],
+        ephemeral: true,
+      }).catch(() => {});
     }
   }
 }

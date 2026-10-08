@@ -9,6 +9,7 @@ import { handleMessage } from "./commands";
 import { handleSlashCommand, registerSlashCommands } from "./slash";
 import { giveaways, buildGiveawayEmbed } from "./giveaway";
 import { logger } from "../lib/logger";
+import { processUserMessageAutomations, sendMemberMessage } from "./automation";
 
 export function createBot(): Client {
   const token = process.env["DISCORD_BOT_TOKEN"];
@@ -46,7 +47,21 @@ export function createBot(): Client {
       await handleMessage(client, message);
     } catch (err) {
       logger.error({ err }, "Error handling message");
+    } finally {
+      await processUserMessageAutomations(client, message);
     }
+  });
+
+  client.on("guildMemberAdd", (member) => {
+    void sendMemberMessage(client, member, "welcome").catch((err) => {
+      logger.error({ err, guildId: member.guild.id }, "Could not send welcome message");
+    });
+  });
+
+  client.on("guildMemberRemove", (member) => {
+    void sendMemberMessage(client, member, "goodbye").catch((err) => {
+      logger.error({ err, guildId: member.guild.id }, "Could not send goodbye message");
+    });
   });
 
   client.on("interactionCreate", async (interaction) => {

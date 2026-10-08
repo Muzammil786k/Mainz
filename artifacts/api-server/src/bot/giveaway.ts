@@ -2,7 +2,9 @@ import {
   EmbedBuilder,
   type TextChannel,
   type Client,
+  type MessageEditOptions,
 } from "discord.js";
+import { premiumColors, premiumMessagePayload } from "./presentation";
 
 export interface Giveaway {
   messageId: string;
@@ -52,10 +54,11 @@ function buildGiveawayEmbed(giveaway: Giveaway): EmbedBuilder {
 
     return new EmbedBuilder()
       .setTitle(giveaway.prize)
-      .setColor(0xff0000)
+      .setColor(premiumColors.brand)
       .setDescription(
         `Ended <t:${endsAt}:R>\nHosted by <@${giveaway.hostId}>\nParticipants: ${giveaway.participants.size}\n${winnersLine}`
       )
+      .setFooter({ text: "HangoutSaiBot • /help" })
       .setTimestamp(giveaway.endsAt);
   }
 
@@ -63,10 +66,11 @@ function buildGiveawayEmbed(giveaway: Giveaway): EmbedBuilder {
 
   return new EmbedBuilder()
     .setTitle(giveaway.prize)
-    .setColor(0xff0000)
+    .setColor(premiumColors.brand)
     .setDescription(
       `End in ${timeLeft}\nHosted by <@${giveaway.hostId}>\nParticipants: ${giveaway.participants.size}`
     )
+    .setFooter({ text: "HangoutSaiBot • /help" })
     .setTimestamp(giveaway.endsAt);
 }
 
@@ -97,18 +101,22 @@ export async function endGiveaway(client: Client, messageId: string): Promise<{ 
     const channel = (await guild.channels.fetch(giveaway.channelId)) as TextChannel;
     const message = await channel.messages.fetch(giveaway.messageId);
 
-    await message.edit({
+    await message.edit(premiumMessagePayload({
       content: "🎉 **GIVEAWAY ENDED** 🎉",
       embeds: [buildGiveawayEmbed(giveaway)],
       components: [],
-    });
+    }, client.user) as MessageEditOptions);
 
     if (giveaway.winners.length > 0) {
-      await channel.send(
-        `🎉 Congratulations ${giveaway.winners.map((id) => `<@${id}>`).join(", ")}! You won **${giveaway.prize}**!`
-      );
+      await channel.send(premiumMessagePayload({
+        content: `🎉 Congratulations ${giveaway.winners.map((id) => `<@${id}>`).join(", ")}! You won **${giveaway.prize}**!`,
+        allowedMentions: { users: giveaway.winners },
+      }, client.user));
     } else {
-      await channel.send(`No one entered the giveaway for **${giveaway.prize}**.`);
+      await channel.send(premiumMessagePayload(
+        `No one entered the giveaway for **${giveaway.prize}**.`,
+        client.user,
+      ));
     }
   } catch (e) {
     console.error("Error ending giveaway:", e);
@@ -132,11 +140,12 @@ export async function rerollGiveaway(client: Client, messageId: string, winnerOv
     const channel = (await guild.channels.fetch(giveaway.channelId)) as TextChannel;
 
     if (giveaway.winners.length > 0) {
-      await channel.send(
-        `🎉 Congratulations ${giveaway.winners.map((id) => `<@${id}>`).join(", ")}! You won **${giveaway.prize}**!`
-      );
+      await channel.send(premiumMessagePayload({
+        content: `🎉 Congratulations ${giveaway.winners.map((id) => `<@${id}>`).join(", ")}! You won **${giveaway.prize}**!`,
+        allowedMentions: { users: giveaway.winners },
+      }, client.user));
     } else {
-      await channel.send(`No valid participants to reroll.`);
+      await channel.send(premiumMessagePayload("No valid participants to reroll.", client.user));
     }
   } catch (e) {
     console.error("Error rerolling:", e);
@@ -171,11 +180,11 @@ export async function startGiveaway(
 
   const embed = buildGiveawayEmbed(giveaway);
 
-  const message = await channel.send({
+  const message = await channel.send(premiumMessagePayload({
     content: "🎉 **GIVEAWAY** 🎉",
     embeds: [embed],
     components: [],
-  });
+  }, client.user));
 
   await message.react("🎉");
 

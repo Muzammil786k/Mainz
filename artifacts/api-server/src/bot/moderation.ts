@@ -10,6 +10,7 @@ import {
   type Client,
 } from "discord.js";
 import { logCase } from "./cases";
+import { premiumEmbed, premiumMessagePayload } from "./presentation";
 
 const C = 0xff0000;
 
@@ -38,7 +39,9 @@ export async function handleKick(client: Client, message: Message): Promise<void
   }
   const reason = args.slice(1).join(" ") || "No reason provided";
   try {
-    await target.send({ embeds: [new EmbedBuilder().setColor(C).setTitle(`🥾 You were kicked from ${message.guild.name}`).addFields({ name: "Reason", value: reason })] }).catch(() => {});
+    await target.send(premiumMessagePayload({
+      embeds: [new EmbedBuilder().setColor(C).setTitle(`🥾 You were kicked from ${message.guild.name}`).addFields({ name: "Reason", value: reason })],
+    }, message.client?.user ?? null)).catch(() => {});
     await target.kick(reason);
     const c = await logCase(client, { type: "KICK", guildId: message.guild.id, targetId: target.id, targetTag: target.user.tag, moderatorId: message.author.id, reason });
     await message.reply({ embeds: [new EmbedBuilder().setColor(C).setDescription(`✅ **${target.user.username}** has been kicked. | Case **#${c.id}**\n**Reason:** ${reason}`)] });
@@ -72,7 +75,9 @@ export async function handleBan(client: Client, message: Message): Promise<void>
   }
   const reason = args.slice(1).join(" ") || "No reason provided";
   try {
-    await target.send({ embeds: [new EmbedBuilder().setColor(C).setTitle(`🔨 You were banned from ${message.guild.name}`).addFields({ name: "Reason", value: reason })] }).catch(() => {});
+    await target.send(premiumMessagePayload({
+      embeds: [new EmbedBuilder().setColor(C).setTitle(`🔨 You were banned from ${message.guild.name}`).addFields({ name: "Reason", value: reason })],
+    }, message.client?.user ?? null)).catch(() => {});
     await target.ban({ reason });
     const c = await logCase(client, { type: "BAN", guildId: message.guild.id, targetId: target.id, targetTag: target.user.tag, moderatorId: message.author.id, reason });
     await message.reply({ embeds: [new EmbedBuilder().setColor(C).setDescription(`✅ **${target.user.username}** has been banned. | Case **#${c.id}**\n**Reason:** ${reason}`)] });
@@ -143,7 +148,10 @@ export async function handleNuke(message: Message): Promise<void> {
 
   collector.on("collect", async (interaction) => {
     if (interaction.customId === "nuke_cancel") {
-      await interaction.update({ embeds: [new EmbedBuilder().setColor(C).setDescription("❌ Nuke cancelled.")], components: [] });
+      await interaction.update({
+        embeds: [premiumEmbed("❌ Nuke cancelled.", { title: "Channel reset" }, message.client?.user ?? null)],
+        components: [],
+      });
       return;
     }
     await interaction.deferUpdate();
@@ -152,15 +160,22 @@ export async function handleNuke(message: Message): Promise<void> {
       const newChannel = await channel.clone({ reason: `Nuke by ${message.author.tag}` });
       await newChannel.setPosition(position);
       await channel.delete();
-      await newChannel.send({ embeds: [new EmbedBuilder().setColor(C).setDescription("💥 Channel has been nuked.")] });
+      await newChannel.send(premiumMessagePayload({
+        embeds: [new EmbedBuilder().setColor(C).setDescription("💥 Channel has been nuked.")],
+      }, message.client?.user ?? null));
     } catch {
-      await (message.channel as TextChannel).send({ embeds: [new EmbedBuilder().setColor(C).setDescription("❌ Failed to nuke channel.")] }).catch(() => {});
+      await (message.channel as TextChannel).send(premiumMessagePayload({
+        embeds: [new EmbedBuilder().setColor(C).setDescription("❌ Failed to nuke channel.")],
+      }, message.client?.user ?? null)).catch(() => {});
     }
   });
 
   collector.on("end", async (_c, reason) => {
     if (reason === "time") {
-      await confirmMsg.edit({ embeds: [new EmbedBuilder().setColor(C).setDescription("❌ Nuke timed out.")], components: [] }).catch(() => {});
+      await confirmMsg.edit({
+        embeds: [premiumEmbed("❌ Nuke timed out.", { title: "Channel reset" }, message.client?.user ?? null)],
+        components: [],
+      }).catch(() => {});
     }
   });
 }

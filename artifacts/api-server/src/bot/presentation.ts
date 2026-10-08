@@ -3,6 +3,7 @@ import {
   type APIEmbed,
   type ClientUser,
   type Message,
+  type MessageCreateOptions,
 } from "discord.js";
 
 const BRAND = "HangoutSaiBot";
@@ -49,12 +50,16 @@ function brandEmbed(value: unknown, user: ClientUser | null, fallbackText: strin
   return embed;
 }
 
-function styleReplyPayload(payload: unknown, user: ClientUser | null): unknown {
+function styleReplyPayload(
+  payload: unknown,
+  user: ClientUser | null,
+  clearExistingContent = false,
+): unknown {
   if (typeof payload !== "string" && (!payload || typeof payload !== "object")) {
     return payload;
   }
 
-  const options =
+  const options: Record<string, unknown> =
     typeof payload === "string"
       ? { content: payload }
       : { ...(payload as Record<string, unknown>) };
@@ -77,7 +82,11 @@ function styleReplyPayload(payload: unknown, user: ClientUser | null): unknown {
           : { text: `${BRAND} • /help` },
       );
     if (iconURL) embed.setAuthor({ name: BRAND, iconURL });
-    options.content = null;
+    if (clearExistingContent) {
+      options.content = null;
+    } else {
+      delete options.content;
+    }
     options.embeds = [embed];
   }
 
@@ -101,7 +110,7 @@ export function withPremiumReplies(message: Message, user: ClientUser | null): M
         if (property === "edit") {
           return async (payload: unknown) => {
             const edit = original.edit.bind(original) as (value: unknown) => Promise<Message>;
-            return wrap(await edit(styleReplyPayload(payload, user)));
+            return wrap(await edit(styleReplyPayload(payload, user, true)));
           };
         }
 
@@ -111,6 +120,13 @@ export function withPremiumReplies(message: Message, user: ClientUser | null): M
     });
 
   return wrap(message);
+}
+
+export function premiumMessagePayload(
+  payload: string | MessageCreateOptions,
+  user: ClientUser | null,
+): MessageCreateOptions {
+  return styleReplyPayload(payload, user) as MessageCreateOptions;
 }
 
 export function premiumEmbed(

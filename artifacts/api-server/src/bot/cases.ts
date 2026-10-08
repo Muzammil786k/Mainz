@@ -7,6 +7,7 @@ import {
 } from "discord.js";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { join } from "path";
+import { premiumMessagePayload } from "./presentation";
 
 const C = 0xff0000;
 const DATA_DIR = join(process.cwd(), "data");
@@ -139,7 +140,7 @@ export async function logCase(
     try {
       const channel = await client.channels.fetch(channelId) as TextChannel | null;
       if (channel?.isTextBased()) {
-        await channel.send({
+        await channel.send(premiumMessagePayload({
           embeds: [
             new EmbedBuilder()
               .setColor(CASE_COLORS[c.type])
@@ -152,7 +153,7 @@ export async function logCase(
               .setFooter({ text: `Case ID: ${c.id}` })
               .setTimestamp(c.timestamp),
           ],
-        });
+        }, client.user));
       }
     } catch {
       // Modlog channel unavailable

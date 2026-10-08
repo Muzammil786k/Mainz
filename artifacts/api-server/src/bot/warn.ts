@@ -1,5 +1,6 @@
 import { EmbedBuilder, PermissionFlagsBits, type Message, type Client } from "discord.js";
 import { logCase } from "./cases";
+import { premiumMessagePayload } from "./presentation";
 
 interface Warning {
   reason: string;
@@ -72,7 +73,7 @@ export async function handleWarn(client: Client, message: Message): Promise<void
   });
 
   try {
-    await target.send({
+    await target.send(premiumMessagePayload({
       embeds: [
         new EmbedBuilder()
           .setColor(0xff0000)
@@ -84,7 +85,7 @@ export async function handleWarn(client: Client, message: Message): Promise<void
           )
           .setTimestamp(),
       ],
-    });
+    }, message.client?.user ?? null));
   } catch { /* DMs closed */ }
 }
 
