@@ -1,5 +1,6 @@
-import { EmbedBuilder, type Message } from "discord.js";
+import { AttachmentBuilder, EmbedBuilder, type Message } from "discord.js";
 import { logger } from "../lib/logger";
+import { renderShipImage } from "./shipImage";
 
 interface SocialAction {
   description: string;
@@ -532,8 +533,22 @@ export async function handleShip(message: Message): Promise<void> {
     )
     .setFooter({ text: "Just for fun — not a real compatibility reading." });
 
+  let files: AttachmentBuilder[] = [];
+  try {
+    const image = await renderShipImage(
+      firstUser.displayAvatarURL({ extension: "png", size: 128 }),
+      secondUser.displayAvatarURL({ extension: "png", size: 128 }),
+      score,
+    );
+    files = [new AttachmentBuilder(image, { name: "ship.png" })];
+    embed.setImage("attachment://ship.png");
+  } catch (err) {
+    logger.error({ err }, "Failed to render ship image; sending text-only embed");
+  }
+
   await message.reply({
     embeds: [embed],
+    files,
     allowedMentions: { parse: [], repliedUser: false },
   });
 }
