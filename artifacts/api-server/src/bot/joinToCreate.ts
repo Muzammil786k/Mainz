@@ -22,6 +22,25 @@ import { logger } from "../lib/logger";
 // Temporary channels created by the bot, mapped channelId -> ownerId. State is in-memory only.
 const tempChannels = new Map<string, string>();
 
+// Per-guild VoiceMaster configuration. State is in-memory only and resets on restart.
+export const hubsByGuild = new Map<string, Set<string>>();
+export const templateByGuild = new Map<string, string>();
+export const defaultLimitByGuild = new Map<string, number>();
+
+export const DEFAULT_NAME_TEMPLATE = "{user}'s channel";
+
+// Per-guild count of temp channels created, used for the {count} placeholder.
+const createdCountByGuild = new Map<string, number>();
+
+function renderChannelName(template: string, displayName: string, count: number): string {
+  const name = template
+    .replaceAll("{user}", displayName)
+    .replaceAll("{count}", String(count))
+    .trim()
+    .slice(0, 100);
+  return name || `${displayName}'s channel`.slice(0, 100);
+}
+
 const JTC_PREFIX = "jtc:";
 const RENAME_MODAL_ID = "jtc:rename_modal";
 const RENAME_INPUT_ID = "name";
@@ -148,10 +167,16 @@ async function createTempChannel(client: Client, newState: VoiceState): Promise<
   try {
     const categoryId = process.env["JTC_CATEGORY_ID"] || lobby.parentId || undefined;
 
+    const guildId = newState.guild.id;
+    const count = (createdCountByGuild.get(guildId) ?? 0) + 1;
+    const template = templateByGuild.get(guildId) ?? DEFAULT_NAME_TEMPLATE;
+    const defaultLimit = defaultLimitByGuild.get(guildId) ?? 0;
+
     created = await newState.guild.channels.create({
-      name: `${member.displayName}'s Channel`,
+      name: renderChannelName(template, member.displayName, count),
       type: ChannelType.GuildVoice,
       parent: categoryId,
+      userLimit: defaultLimit,
       permissionOverwrites: [
         {
           id: member.id,
@@ -165,6 +190,7 @@ async function createTempChannel(client: Client, newState: VoiceState): Promise<
       ],
     });
     tempChannels.set(created.id, member.id);
+    createdCountByGuild.set(guildId, count);
 
     // The member may have left the lobby while the channel was being created.
     if (member.voice.channelId !== lobby.id) {
@@ -333,7 +359,14 @@ async function handleJtcRenameSubmit(interaction: ModalSubmitInteraction): Promi
 }
 
 const VC_USAGE =
-  "Usage: `!vc <lock|unlock|hide|show|limit|name|permit|reject|kick|pull|claim|info>`";
+  "Usage: `!vc <lock|unlock|hide|show|ghost|unghost|limit|name|bitrate|region|permit|reject|kick|pull|drag|transfer|claim|info>`";
+
+// Alternate subcommand names mapped to their canonical equivalents.
+const VC_ALIASES: Record<string, string> = {
+  ghost: "hide",
+  unghost: "show",
+  drag: "pull",
+};
 
 export async function handleVcCommand(message: Message, args: string[]): Promise<void> {
   const guild = message.guild;
@@ -344,7 +377,8 @@ export async function handleVcCommand(message: Message, args: string[]): Promise
   }
   const channel: VoiceChannel = voice;
 
-  const sub = args[0]?.toLowerCase() ?? "";
+  const rawSub = args[0]?.toLowerCase() ?? "";
+  const sub = Object.hasOwn(VC_ALIASES, rawSub) ? (VC_ALIASES[rawSub] ?? rawSub) : rawSub;
   const ownerId = tempChannels.get(channel.id);
 
   try {
@@ -379,7 +413,7 @@ export async function handleVcCommand(message: Message, args: string[]): Promise
 
     const isOwnerCommand =
       isAccessAction(sub) ||
-      ["limit", "name", "permit", "reject", "kick", "move", "pull"].includes(sub);
+      ["limit", "name", "permit", "reject", "kick", "move", "pull", "bitrate", "region", "transfer"].includes(sub);
     if (!isOwnerCommand) {
       await message.reply(VC_USAGE);
       return;
@@ -407,6 +441,36 @@ export async function handleVcCommand(message: Message, args: string[]): Promise
       return;
     }
 
+    if (sub === "bitrate") {
+      const raw = args[1] ?? "";
+      const kbps = /^\d+$/.test(raw) ? Number.parseInt(raw, 10) : Number.NaN;
+      if (!Number.isInteger(kbps) || kbps < 8 || kbps > 96) {
+        await message.reply("Provide a bitrate between 8 and 96 (kbps).");
+        return;
+      }
+      const bitrate = Math.min(kbps * 1000, guild.maximumBitrate);
+      await channel.setBitrate(bitrate, "Join to Create: bitrate changed by owner");
+      await message.reply(`🎚️ Bitrate set to ${Math.floor(bitrate / 1000)} kbps.`);
+      return;
+    }
+
+    if (sub === "region") {
+      const region = (args[1] ?? "").toLowerCase();
+      if (!region) {
+        await message.reply("Provide a region name (e.g. `us-east`, `europe`) or `auto`.");
+        return;
+      }
+      try {
+        await channel.setRTCRegion(region === "auto" ? null : region, "Join to Create: region changed by owner");
+      } catch (err) {
+        logger.warn({ err, guildId: guild.id, channelId: channel.id, region }, "Failed to set voice region");
+        await message.reply("That region isn't valid. Try `auto` or a Discord voice region such as `us-east`.");
+        return;
+      }
+      await message.reply(region === "auto" ? "🌐 Region set to automatic." : `🌐 Region set to **${region}**.`);
+      return;
+    }
+
     if (sub === "name") {
       const name = args.slice(1).join(" ").trim().slice(0, 100);
       if (!name) {
@@ -422,6 +486,31 @@ export async function handleVcCommand(message: Message, args: string[]): Promise
     const target = message.mentions.members?.first();
     if (!target) {
       await message.reply(`Mention a member, e.g. \`!vc ${sub} @user\`.`);
+      return;
+    }
+
+    if (sub === "transfer") {
+      if (target.id === ownerId) {
+        await message.reply("You already own this channel.");
+        return;
+      }
+      if (target.user.bot) {
+        await message.reply("You can't transfer ownership to a bot.");
+        return;
+      }
+      if (target.voice.channelId !== channel.id) {
+        await message.reply("That member is not in your channel.");
+        return;
+      }
+      const previousOwnerId = ownerId ?? message.author.id;
+      tempChannels.set(channel.id, target.id);
+      try {
+        await transferOwnership(channel, target.id, previousOwnerId);
+      } catch (err) {
+        tempChannels.set(channel.id, previousOwnerId);
+        throw err;
+      }
+      await message.reply(`👑 Transferred ownership to <@${target.id}>.`);
       return;
     }
 
@@ -485,7 +574,6 @@ export async function handleVoiceStateUpdate(
   newState: VoiceState,
 ): Promise<void> {
   const lobbyId = process.env["JTC_LOBBY_CHANNEL_ID"];
-  if (!lobbyId) return;
 
   // Ignore events caused by the bot itself, and by other bots.
   const member = newState.member ?? oldState.member;
@@ -493,7 +581,12 @@ export async function handleVoiceStateUpdate(
 
   if (oldState.channelId === newState.channelId) return;
 
-  if (newState.channelId === lobbyId) {
+  const isHub =
+    !!newState.channelId &&
+    (hubsByGuild.get(newState.guild.id)?.has(newState.channelId) === true ||
+      (!!lobbyId && newState.channelId === lobbyId));
+
+  if (isHub) {
     await createTempChannel(client, newState);
   }
 

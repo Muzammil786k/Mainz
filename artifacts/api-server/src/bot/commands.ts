@@ -36,6 +36,7 @@ import {
 } from "./automation-commands";
 import { withPremiumReplies } from "./presentation";
 import { handleVcCommand } from "./joinToCreate";
+import { handleVmCommand } from "./voicemaster-admin";
 
 const PREFIX = "g";
 
@@ -154,6 +155,9 @@ export async function handleMessage(client: Client, incomingMessage: Message): P
   } else if (lower === "!vc" || lower.startsWith("!vc ")) {
     const args = content.split(/\s+/).slice(1);
     await handleVcCommand(message, args);
+  } else if (lower === "!vm" || lower.startsWith("!vm ") || lower === "!voicemaster" || lower.startsWith("!voicemaster ")) {
+    const args = content.split(/\s+/).slice(1);
+    await handleVmCommand(message, args);
   } else {
     const command = lower.match(/^!([a-z]+)(?:\s|$)/)?.[1] as SocialActionName | undefined;
     if (command && Object.hasOwn(SOCIAL_ACTIONS, command)) {
