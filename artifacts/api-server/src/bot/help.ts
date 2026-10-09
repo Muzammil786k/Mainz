@@ -76,6 +76,7 @@ function page3(): EmbedBuilder {
       { name: "`!nick @user <name|reset>` • `/nick`", value: "Change or reset a member nickname.\n*(Manage Nicknames)*" },
       { name: "`!announce #channel <message>` • `/announce`", value: "Send an announcement embed to a channel.\n*(Manage Server)*" },
       { name: "`!vc <subcommand>`", value: "Manage your Join to Create voice channel: `lock` `unlock` `hide` `show` `limit <n>` `name <name>` `permit @user` `reject @user` `kick @user` `pull @user` `claim` `info`.\n*(Channel owner; `info` and `claim` are open to members in the channel)*" },
+      { name: "🎙️ VoiceMaster", value: "`!vm setup` create the category, hub, and interface\n`!vm add #voice` / `!vm removehub #voice` manage hubs\n`!vm hubs` list hubs\n`!vm default <template>` name template (`{user}` `{count}`)\n`!vm limit <0-99>` default user limit\n*(Manage Server)*\n\nMore `!vc` controls for owners: `bitrate <8-96>` `region <name|auto>` `ghost` `unghost` `transfer @user` `drag @user`." },
       { name: "\u200b", value: "**Case types:** ⚠️ WARN • 🔇 MUTE • 🔊 UNMUTE • 🥾 KICK • 🔨 BAN • 🔓 UNBAN" },
     )
     .setFooter({ text: HELP_FOOTER });
