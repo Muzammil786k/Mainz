@@ -655,7 +655,7 @@ async function resolveDuel(guildId: string, challengerId: string, targetId: stri
 export async function handleMiningCommand(message: Message, args: string[]): Promise<void> {
   const guild = message.guild;
   if (!guild) return;
-  const subcommand = args[0]?.toLowerCase() ?? "help";
+  const subcommand = args[0]?.toLowerCase() ?? "mine";
 
   try {
     if (Object.hasOwn(ACTIVITIES, subcommand)) {
@@ -924,7 +924,7 @@ export async function handleMiningCommand(message: Message, args: string[]): Pro
         .orderBy(desc(botMiningProfilesTable.coins))
         .limit(10);
       const rows = leaders.map((profile, index) => `**${index + 1}.** <@${profile.userId}> — ${profile.coins.toLocaleString()} coins`);
-      await message.reply({ embeds: [embed("Mining leaderboard", rows.length ? rows.join("\n") : "No miners yet. Use `!mine mine` to get started.")] });
+      await message.reply({ embeds: [embed("Mining leaderboard", rows.length ? rows.join("\n") : "No miners yet. Use `!mine` to get started.")] });
       return;
     }
 
