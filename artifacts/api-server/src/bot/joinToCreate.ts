@@ -28,6 +28,18 @@ const RENAME_INPUT_ID = "name";
 const USER_LIMITS = [0, 2, 5, 10];
 const OWNER_ONLY_MESSAGE = "Only the channel owner can use this.";
 
+// In-memory per-guild config overrides set via `!vc setlobby` / `!vc setcategory`.
+// These are not persisted and reset on restart; env vars remain the persistent fallback.
+const jtcConfig = new Map<string, { lobbyId?: string; categoryId?: string }>();
+
+function getJtcLobbyId(guildId: string): string | undefined {
+  return jtcConfig.get(guildId)?.lobbyId || process.env["JTC_LOBBY_CHANNEL_ID"];
+}
+
+function getJtcCategoryId(guildId: string): string | undefined {
+  return jtcConfig.get(guildId)?.categoryId || process.env["JTC_CATEGORY_ID"];
+}
+
 function buildControlPanel(ownerId: string): {
   embeds: EmbedBuilder[];
   components: ActionRowBuilder<ButtonBuilder>[];
@@ -146,7 +158,7 @@ async function createTempChannel(client: Client, newState: VoiceState): Promise<
 
   let created: VoiceChannel | null = null;
   try {
-    const categoryId = process.env["JTC_CATEGORY_ID"] || lobby.parentId || undefined;
+    const categoryId = getJtcCategoryId(newState.guild.id) || lobby.parentId || undefined;
 
     created = await newState.guild.channels.create({
       name: `${member.displayName}'s Channel`,
@@ -333,10 +345,80 @@ async function handleJtcRenameSubmit(interaction: ModalSubmitInteraction): Promi
 }
 
 const VC_USAGE =
-  "Usage: `!vc <lock|unlock|hide|show|limit|name|permit|reject|kick|pull|claim|info>`";
+  "Usage: `!vc <lock|unlock|hide|show|limit|name|permit|reject|kick|pull|claim|info|setlobby|setcategory|config>`";
+
+const JTC_ADMIN_DENIED = "You need the Manage Server permission to configure Join to Create.";
+
+// Handles admin configuration subcommands. Returns true when the subcommand was handled.
+async function handleJtcConfigCommand(message: Message, guild: Guild, args: string[]): Promise<boolean> {
+  const sub = args[0]?.toLowerCase() ?? "";
+  if (sub !== "setlobby" && sub !== "setcategory" && sub !== "config") return false;
+
+  if (!message.member?.permissions.has(PermissionFlagsBits.ManageGuild)) {
+    await message.reply(JTC_ADMIN_DENIED);
+    return true;
+  }
+
+  try {
+    if (sub === "config") {
+      const override = jtcConfig.get(guild.id);
+      const describe = (overrideId: string | undefined, envId: string | undefined): string => {
+        if (overrideId) return `<#${overrideId}> (\`${overrideId}\`) — set by command`;
+        if (envId) return `<#${envId}> (\`${envId}\`) — from environment variable`;
+        return "not set";
+      };
+      await message.reply(
+        [
+          `**Join to Create config**`,
+          `Lobby: ${describe(override?.lobbyId, process.env["JTC_LOBBY_CHANNEL_ID"])}`,
+          `Category: ${describe(override?.categoryId, process.env["JTC_CATEGORY_ID"])}`,
+        ].join("\n"),
+      );
+      return true;
+    }
+
+    const raw = args[1] ?? "";
+    if (!/^\d+$/.test(raw)) {
+      await message.reply(`Provide a channel ID, e.g. \`!vc ${sub} 123456789012345678\`.`);
+      return true;
+    }
+    const target = guild.channels.cache.get(raw);
+    if (!target) {
+      await message.reply("I couldn't find a channel with that ID in this server.");
+      return true;
+    }
+
+    const current = jtcConfig.get(guild.id) ?? {};
+    if (sub === "setlobby") {
+      if (target.type !== ChannelType.GuildVoice) {
+        await message.reply("That channel is not a voice channel.");
+        return true;
+      }
+      jtcConfig.set(guild.id, { ...current, lobbyId: target.id });
+      await message.reply(
+        `✅ Join to Create lobby set to <#${target.id}>. This is stored in memory and resets on restart.`,
+      );
+    } else {
+      if (target.type !== ChannelType.GuildCategory) {
+        await message.reply("That channel is not a category.");
+        return true;
+      }
+      jtcConfig.set(guild.id, { ...current, categoryId: target.id });
+      await message.reply(
+        `✅ Join to Create category set to **${target.name}**. This is stored in memory and resets on restart.`,
+      );
+    }
+  } catch (err) {
+    logger.error({ err, guildId: guild.id, sub }, "Failed to run !vc config command");
+    await message.reply("Something went wrong running that command.").catch(() => {});
+  }
+  return true;
+}
 
 export async function handleVcCommand(message: Message, args: string[]): Promise<void> {
   const guild = message.guild;
+  if (guild && (await handleJtcConfigCommand(message, guild, args))) return;
+
   const voice = message.member?.voice.channel;
   if (!guild || !voice || voice.type !== ChannelType.GuildVoice || !tempChannels.has(voice.id)) {
     await message.reply("You must be in a temporary voice channel.");
@@ -484,7 +566,7 @@ export async function handleVoiceStateUpdate(
   oldState: VoiceState,
   newState: VoiceState,
 ): Promise<void> {
-  const lobbyId = process.env["JTC_LOBBY_CHANNEL_ID"];
+  const lobbyId = getJtcLobbyId(newState.guild.id);
   if (!lobbyId) return;
 
   // Ignore events caused by the bot itself, and by other bots.
