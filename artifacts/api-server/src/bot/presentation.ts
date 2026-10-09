@@ -7,10 +7,12 @@ import {
 } from "discord.js";
 
 const FOOTER_TEXT = "Use /help to see all commands";
-const BRAND_COLOR = 0x5865f2;
-const SUCCESS_COLOR = 0x57f287;
-const WARNING_COLOR = 0xfee75c;
-const ERROR_COLOR = 0xed4245;
+// Every bot embed uses the same neutral color (#2B2D31).
+const EMBED_COLOR = 0x2b2d31;
+const BRAND_COLOR = EMBED_COLOR;
+const SUCCESS_COLOR = EMBED_COLOR;
+const WARNING_COLOR = EMBED_COLOR;
+const ERROR_COLOR = EMBED_COLOR;
 
 function responseColor(text: string): number {
   const trimmed = text.trimStart();

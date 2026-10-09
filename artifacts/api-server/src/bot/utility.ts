@@ -7,7 +7,7 @@ import {
 } from "discord.js";
 import { premiumMessagePayload } from "./presentation";
 
-const C = 0xff0000;
+const C = 0x2b2d31;
 
 // ─── User Info ─────────────────────────────────────────────────────────────────
 
@@ -124,7 +124,7 @@ export async function handleMemberCount(message: Message): Promise<void> {
   await message.reply({
     embeds: [
       new EmbedBuilder()
-        .setColor(0x5865f2)
+        .setColor(0x2b2d31)
         .setTitle(`📊 Member Count — ${guild.name}`)
         .setThumbnail(guild.iconURL({ size: 256 }) ?? null)
         .addFields(
@@ -166,7 +166,7 @@ export async function handlePing(client: Client, message: Message): Promise<void
   await message.reply({
     embeds: [
       new EmbedBuilder()
-        .setColor(0x57f287)
+        .setColor(0x2b2d31)
         .setTitle("🏓 Pong!")
         .addFields(
           { name: "WebSocket", value: `${client.ws.ping}ms`, inline: true },
@@ -182,7 +182,7 @@ export async function handleBotInfo(client: Client, message: Message): Promise<v
   await message.reply({
     embeds: [
       new EmbedBuilder()
-        .setColor(0x5865f2)
+        .setColor(0x2b2d31)
         .setTitle("🤖 Bot Information")
         .setThumbnail(user?.displayAvatarURL({ size: 256 }) ?? null)
         .addFields(
@@ -203,7 +203,7 @@ export async function handleChannelInfo(message: Message): Promise<void> {
   await message.reply({
     embeds: [
       new EmbedBuilder()
-        .setColor(0x5865f2)
+        .setColor(0x2b2d31)
         .setTitle(`📺 Channel Information — #${channel.name}`)
         .addFields(
           { name: "Channel ID", value: channel.id, inline: true },

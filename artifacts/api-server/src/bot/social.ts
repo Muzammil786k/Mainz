@@ -377,7 +377,6 @@ function safeDisplayName(name: string): string {
 
 const SOCIAL_BACK_PREFIX = "social:back:";
 const NON_INTERACTION_ACTIONS: ReadonlySet<string> = new Set([
-  "aura",
   "rate",
   "rizz",
   "vibecheck",
@@ -396,6 +395,8 @@ const BACK_LABELS: Partial<Record<SocialActionName, string>> = {
   boop: "Boop back 👉",
   bonk: "Bonk back 🔨",
   tickle: "Tickle back 😆",
+  kill: "Kill back 🎮",
+  aura: "Aura back ✨",
 };
 const BACK_NOUNS: Partial<Record<SocialActionName, string>> = {
   hug: "hug",
@@ -409,6 +410,8 @@ const BACK_NOUNS: Partial<Record<SocialActionName, string>> = {
   boop: "boop",
   bonk: "bonk",
   tickle: "tickle",
+  kill: "kill",
+  aura: "aura check",
 };
 
 function isSocialActionName(name: string): name is SocialActionName {
@@ -686,7 +689,7 @@ export async function handleShip(message: Message): Promise<void> {
             : "Opposites attract; the memes are guaranteed.";
 
   const embed = new EmbedBuilder()
-    .setColor(0xff72a6)
+    .setColor(0x2b2d31)
     .setTitle("💘 Ship check")
     .setDescription(
       `**${safeDisplayName(firstMember.displayName)} × ${safeDisplayName(secondMember.displayName)}**\n\n${meter} **${score}%**\n${verdict}`,
