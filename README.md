@@ -25,6 +25,8 @@ Members who join a designated lobby voice channel get their own temporary voice 
 - `JTC_LOBBY_CHANNEL_ID` — ID of the lobby voice channel (required; the feature is disabled when unset)
 - `JTC_CATEGORY_ID` — ID of the category for created channels (optional; defaults to the lobby's category)
 
+Server admins (Manage Server permission) can also configure it from Discord: `!vc setlobby <id>` sets the lobby voice channel, `!vc setcategory <id>` sets the category, and `!vc config` shows the current values and whether each comes from a command or an env var. Values set by command are stored in memory only, so they reset on restart or redeploy; the env vars remain the persistent option and are used when no command override is set.
+
 Each temporary channel's chat gets a control panel with Lock, Unlock, Hide, Show, Limit (cycles 0/2/5/10), Rename and Claim buttons; all but Claim are owner-only, and ownership passes to another member when the owner leaves.
 
 The bot needs the Manage Channels and Move Members permissions, and the Guild Voice States gateway intent. Temporary channels are tracked in memory, so channels left over from before a restart are not cleaned up automatically.
