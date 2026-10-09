@@ -11,6 +11,8 @@ import {
   TextInputStyle,
   type ButtonInteraction,
   type Client,
+  type Guild,
+  type Message,
   type ModalSubmitInteraction,
   type VoiceChannel,
   type VoiceState,
@@ -78,6 +80,55 @@ async function transferOwnership(
       ManageChannels: null,
       MoveMembers: null,
     });
+  }
+}
+
+type AccessAction = "lock" | "unlock" | "hide" | "show";
+
+// Applies a lock/unlock/hide/show change to the @everyone overwrite and returns the confirmation text.
+async function applyAccessAction(
+  channel: VoiceChannel,
+  guild: Guild,
+  action: AccessAction,
+): Promise<string> {
+  const everyone = guild.roles.everyone;
+  switch (action) {
+    case "lock":
+      await channel.permissionOverwrites.edit(everyone, { Connect: false });
+      return "🔒 Channel locked.";
+    case "unlock":
+      await channel.permissionOverwrites.edit(everyone, { Connect: null });
+      return "🔓 Channel unlocked.";
+    case "hide":
+      await channel.permissionOverwrites.edit(everyone, { ViewChannel: false });
+      return "🙈 Channel hidden.";
+    case "show":
+      await channel.permissionOverwrites.edit(everyone, { ViewChannel: null });
+      return "👁️ Channel visible.";
+  }
+}
+
+function isAccessAction(action: string): action is AccessAction {
+  return action === "lock" || action === "unlock" || action === "hide" || action === "show";
+}
+
+// Returns a user-facing reason the claim is not allowed, or null when the claim is valid.
+function getClaimError(channel: VoiceChannel, userId: string): string | null {
+  const ownerId = tempChannels.get(channel.id);
+  if (ownerId === userId) return "You already own this channel.";
+  if (!channel.members.has(userId)) return "You must be in the voice channel to claim it.";
+  if (ownerId && channel.members.has(ownerId)) return "The channel owner is still in the channel.";
+  return null;
+}
+
+async function performClaim(channel: VoiceChannel, userId: string): Promise<void> {
+  const ownerId = tempChannels.get(channel.id);
+  tempChannels.set(channel.id, userId);
+  try {
+    await transferOwnership(channel, userId, ownerId ?? userId);
+  } catch (err) {
+    if (ownerId) tempChannels.set(channel.id, ownerId);
+    throw err;
   }
 }
 
@@ -201,33 +252,14 @@ async function handleJtcButton(interaction: ButtonInteraction): Promise<void> {
   const ownerId = tempChannels.get(channel.id);
 
   if (action === "claim") {
-    if (ownerId === interaction.user.id) {
-      await interaction.reply({ content: "You already own this channel.", flags: MessageFlags.Ephemeral });
-      return;
-    }
-    if (!channel.members.has(interaction.user.id)) {
-      await interaction.reply({
-        content: "You must be in the voice channel to claim it.",
-        flags: MessageFlags.Ephemeral,
-      });
-      return;
-    }
-    if (ownerId && channel.members.has(ownerId)) {
-      await interaction.reply({
-        content: "The channel owner is still in the channel.",
-        flags: MessageFlags.Ephemeral,
-      });
+    const claimError = getClaimError(channel, interaction.user.id);
+    if (claimError) {
+      await interaction.reply({ content: claimError, flags: MessageFlags.Ephemeral });
       return;
     }
 
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-    tempChannels.set(channel.id, interaction.user.id);
-    try {
-      await transferOwnership(channel, interaction.user.id, ownerId ?? interaction.user.id);
-    } catch (err) {
-      if (ownerId) tempChannels.set(channel.id, ownerId);
-      throw err;
-    }
+    await performClaim(channel, interaction.user.id);
     await interaction.editReply({ content: "You are now the owner of this channel." });
     return;
   }
@@ -253,25 +285,13 @@ async function handleJtcButton(interaction: ButtonInteraction): Promise<void> {
   }
 
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-  const everyone = guild.roles.everyone;
+
+  if (isAccessAction(action)) {
+    await interaction.editReply({ content: await applyAccessAction(channel, guild, action) });
+    return;
+  }
 
   switch (action) {
-    case "lock":
-      await channel.permissionOverwrites.edit(everyone, { Connect: false });
-      await interaction.editReply({ content: "🔒 Channel locked." });
-      break;
-    case "unlock":
-      await channel.permissionOverwrites.edit(everyone, { Connect: null });
-      await interaction.editReply({ content: "🔓 Channel unlocked." });
-      break;
-    case "hide":
-      await channel.permissionOverwrites.edit(everyone, { ViewChannel: false });
-      await interaction.editReply({ content: "🙈 Channel hidden." });
-      break;
-    case "show":
-      await channel.permissionOverwrites.edit(everyone, { ViewChannel: null });
-      await interaction.editReply({ content: "👁️ Channel visible." });
-      break;
     case "limit": {
       const index = USER_LIMITS.indexOf(channel.userLimit);
       const next = USER_LIMITS[(index + 1) % USER_LIMITS.length] ?? 0;
@@ -310,6 +330,141 @@ async function handleJtcRenameSubmit(interaction: ModalSubmitInteraction): Promi
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
   await channel.setName(name, "Join to Create: renamed by owner");
   await interaction.editReply({ content: `✏️ Channel renamed to **${name}**.` });
+}
+
+const VC_USAGE =
+  "Usage: `!vc <lock|unlock|hide|show|limit|name|permit|reject|kick|pull|claim|info>`";
+
+export async function handleVcCommand(message: Message, args: string[]): Promise<void> {
+  const guild = message.guild;
+  const voice = message.member?.voice.channel;
+  if (!guild || !voice || voice.type !== ChannelType.GuildVoice || !tempChannels.has(voice.id)) {
+    await message.reply("You must be in a temporary voice channel.");
+    return;
+  }
+  const channel: VoiceChannel = voice;
+
+  const sub = args[0]?.toLowerCase() ?? "";
+  const ownerId = tempChannels.get(channel.id);
+
+  try {
+    if (sub === "info") {
+      const overwrite = channel.permissionOverwrites.cache.get(guild.roles.everyone.id);
+      const locked = overwrite?.deny.has(PermissionFlagsBits.Connect) ?? false;
+      const hidden = overwrite?.deny.has(PermissionFlagsBits.ViewChannel) ?? false;
+      const embed = new EmbedBuilder()
+        .setTitle("Voice Channel Info")
+        .addFields(
+          { name: "Owner", value: ownerId ? `<@${ownerId}>` : "None", inline: true },
+          { name: "Name", value: channel.name, inline: true },
+          { name: "User Limit", value: channel.userLimit === 0 ? "None" : String(channel.userLimit), inline: true },
+          { name: "Locked", value: locked ? "Yes" : "No", inline: true },
+          { name: "Hidden", value: hidden ? "Yes" : "No", inline: true },
+          { name: "Members", value: String(channel.members.size), inline: true },
+        );
+      await message.reply({ embeds: [embed] });
+      return;
+    }
+
+    if (sub === "claim") {
+      const claimError = getClaimError(channel, message.author.id);
+      if (claimError) {
+        await message.reply(claimError);
+        return;
+      }
+      await performClaim(channel, message.author.id);
+      await message.reply("You are now the owner of this channel.");
+      return;
+    }
+
+    const isOwnerCommand =
+      isAccessAction(sub) ||
+      ["limit", "name", "permit", "reject", "kick", "move", "pull"].includes(sub);
+    if (!isOwnerCommand) {
+      await message.reply(VC_USAGE);
+      return;
+    }
+
+    if (ownerId !== message.author.id) {
+      await message.reply(OWNER_ONLY_MESSAGE);
+      return;
+    }
+
+    if (isAccessAction(sub)) {
+      await message.reply(await applyAccessAction(channel, guild, sub));
+      return;
+    }
+
+    if (sub === "limit") {
+      const raw = args[1] ?? "";
+      const limit = /^\d+$/.test(raw) ? Number.parseInt(raw, 10) : Number.NaN;
+      if (!Number.isInteger(limit) || limit < 0 || limit > 99) {
+        await message.reply("Provide a user limit between 0 and 99 (0 removes the limit).");
+        return;
+      }
+      await channel.setUserLimit(limit);
+      await message.reply(limit === 0 ? "👥 User limit removed." : `👥 User limit set to ${limit}.`);
+      return;
+    }
+
+    if (sub === "name") {
+      const name = args.slice(1).join(" ").trim().slice(0, 100);
+      if (!name) {
+        await message.reply("Provide a new channel name.");
+        return;
+      }
+      await channel.setName(name, "Join to Create: renamed by owner");
+      await message.reply(`✏️ Channel renamed to **${name}**.`);
+      return;
+    }
+
+    // Remaining subcommands all target a mentioned member.
+    const target = message.mentions.members?.first();
+    if (!target) {
+      await message.reply(`Mention a member, e.g. \`!vc ${sub} @user\`.`);
+      return;
+    }
+
+    if (sub === "move" || sub === "pull") {
+      if (target.voice.channelId === channel.id) {
+        await message.reply("That member is already in your channel.");
+        return;
+      }
+      if (!target.voice.channel) {
+        await message.reply("That member is not in a voice channel.");
+        return;
+      }
+      await target.voice.setChannel(channel, "Join to Create: pulled by owner");
+      await message.reply(`Pulled <@${target.id}> into the channel.`);
+      return;
+    }
+
+    if (target.id === ownerId) {
+      await message.reply("You can't do that to the channel owner.");
+      return;
+    }
+
+    if (sub === "permit") {
+      await channel.permissionOverwrites.edit(target.id, { ViewChannel: true, Connect: true });
+      await message.reply(`✅ Permitted <@${target.id}>.`);
+    } else if (sub === "reject") {
+      await channel.permissionOverwrites.edit(target.id, { Connect: false, ViewChannel: false });
+      if (target.voice.channelId === channel.id) {
+        await target.voice.disconnect("Join to Create: rejected by owner");
+      }
+      await message.reply(`⛔ Rejected <@${target.id}>.`);
+    } else if (sub === "kick") {
+      if (target.voice.channelId !== channel.id) {
+        await message.reply("That member is not in your channel.");
+        return;
+      }
+      await target.voice.disconnect("Join to Create: kicked by owner");
+      await message.reply(`🥾 Kicked <@${target.id}> from the channel.`);
+    }
+  } catch (err) {
+    logger.error({ err, guildId: guild.id, channelId: channel.id, sub }, "Failed to run !vc command");
+    await message.reply("Something went wrong running that command.").catch(() => {});
+  }
 }
 
 export async function handleJtcInteraction(
