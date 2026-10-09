@@ -76,6 +76,8 @@ function page3(): EmbedBuilder {
       { name: "`!nick @user <name|reset>` • `/nick`", value: "Change or reset a member nickname.\n*(Manage Nicknames)*" },
       { name: "`!announce #channel <message>` • `/announce`", value: "Send an announcement embed to a channel.\n*(Manage Server)*" },
       { name: "`!vc <subcommand>`", value: "Manage your Join to Create voice channel: `lock` `unlock` `hide` `show` `limit <n>` `name <name>` `permit @user` `reject @user` `kick @user` `pull @user` `claim` `info`.\n*(Channel owner; `info` and `claim` are open to members in the channel)*" },
+      { name: "`!jtc set #lobby [#category]` • `/jtc set`", value: "Choose the Join to Create lobby voice channel and optional category.\n*(Manage Server)*" },
+      { name: "`!jtc remove` • `!jtc status` • `/jtc`", value: "Turn off Join to Create, or show the current lobby and category.\n*(Manage Server)*" },
       { name: "\u200b", value: "**Case types:** ⚠️ WARN • 🔇 MUTE • 🔊 UNMUTE • 🥾 KICK • 🔨 BAN • 🔓 UNBAN" },
     )
     .setFooter({ text: HELP_FOOTER });

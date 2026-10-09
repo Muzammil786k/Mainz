@@ -17,7 +17,66 @@ import {
   type VoiceChannel,
   type VoiceState,
 } from "discord.js";
+import { eq } from "drizzle-orm";
+import { db, botJoinToCreateTable } from "@workspace/db";
 import { logger } from "../lib/logger";
+
+interface JtcConfig {
+  lobbyId: string;
+  categoryId: string | null;
+  source: "guild" | "env";
+}
+
+const CONFIG_CACHE_MS = 15_000;
+const configCache = new Map<string, { expiresAt: number; value: JtcConfig | null }>();
+
+function envJtcConfig(): JtcConfig | null {
+  const lobbyId = process.env["JTC_LOBBY_CHANNEL_ID"];
+  if (!lobbyId) return null;
+  return { lobbyId, categoryId: process.env["JTC_CATEGORY_ID"] || null, source: "env" };
+}
+
+// Per-guild config stored in the database, falling back to the JTC_* environment variables.
+async function getJtcConfig(guildId: string): Promise<JtcConfig | null> {
+  const cached = configCache.get(guildId);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+
+  try {
+    const [row] = await db
+      .select()
+      .from(botJoinToCreateTable)
+      .where(eq(botJoinToCreateTable.guildId, guildId))
+      .limit(1);
+    const value: JtcConfig | null = row
+      ? { lobbyId: row.lobbyChannelId, categoryId: row.categoryId, source: "guild" }
+      : envJtcConfig();
+    configCache.set(guildId, { expiresAt: Date.now() + CONFIG_CACHE_MS, value });
+    return value;
+  } catch (err) {
+    logger.error({ err, guildId }, "Failed to load join-to-create config");
+    return envJtcConfig();
+  }
+}
+
+async function setJtcConfig(guildId: string, lobbyId: string, categoryId: string | null): Promise<void> {
+  await db
+    .insert(botJoinToCreateTable)
+    .values({ guildId, lobbyChannelId: lobbyId, categoryId })
+    .onConflictDoUpdate({
+      target: botJoinToCreateTable.guildId,
+      set: { lobbyChannelId: lobbyId, categoryId, updatedAt: new Date() },
+    });
+  configCache.delete(guildId);
+}
+
+async function removeJtcConfig(guildId: string): Promise<boolean> {
+  const deleted = await db
+    .delete(botJoinToCreateTable)
+    .where(eq(botJoinToCreateTable.guildId, guildId))
+    .returning({ guildId: botJoinToCreateTable.guildId });
+  configCache.delete(guildId);
+  return deleted.length > 0;
+}
 
 // Temporary channels created by the bot, mapped channelId -> ownerId. State is in-memory only.
 const tempChannels = new Map<string, string>();
@@ -135,7 +194,11 @@ async function performClaim(channel: VoiceChannel, userId: string): Promise<void
 // Members currently having a channel created for them, to avoid duplicates on rapid rejoins.
 const pendingMembers = new Set<string>();
 
-async function createTempChannel(client: Client, newState: VoiceState): Promise<void> {
+async function createTempChannel(
+  client: Client,
+  newState: VoiceState,
+  config: JtcConfig,
+): Promise<void> {
   const member = newState.member;
   const lobby = newState.channel;
   if (!member || !lobby) return;
@@ -146,7 +209,7 @@ async function createTempChannel(client: Client, newState: VoiceState): Promise<
 
   let created: VoiceChannel | null = null;
   try {
-    const categoryId = process.env["JTC_CATEGORY_ID"] || lobby.parentId || undefined;
+    const categoryId = config.categoryId || lobby.parentId || undefined;
 
     created = await newState.guild.channels.create({
       name: `${member.displayName}'s Channel`,
@@ -467,6 +530,118 @@ export async function handleVcCommand(message: Message, args: string[]): Promise
   }
 }
 
+const JTC_USAGE =
+  "ℹ️ Usage: `!jtc set <#lobby-voice-channel> [#category]`, `!jtc remove`, or `!jtc status`.";
+const NO_MENTIONS = { parse: [] as never[], repliedUser: false };
+
+function parseChannelId(token: string): string | null {
+  const match = /^<#(\d{17,20})>$/.exec(token) ?? /^(\d{17,20})$/.exec(token);
+  return match?.[1] ?? null;
+}
+
+export async function handleJtcCommand(message: Message, args: string[]): Promise<void> {
+  const guild = message.guild;
+  if (!guild) return;
+
+  const reply = (content: string) =>
+    message.reply({ content, allowedMentions: NO_MENTIONS });
+
+  const member =
+    message.member ?? (await guild.members.fetch(message.author.id).catch(() => null));
+  if (
+    !member?.permissions.has(PermissionFlagsBits.ManageGuild) &&
+    !member?.permissions.has(PermissionFlagsBits.Administrator)
+  ) {
+    await reply("❌ You need **Manage Server** permission to configure Join to Create.");
+    return;
+  }
+
+  const sub = args[0]?.toLowerCase() ?? "";
+
+  try {
+    if (sub === "set") {
+      const lobbyToken = args[1];
+      if (!lobbyToken) {
+        await reply("❌ Provide a lobby voice channel. " + JTC_USAGE);
+        return;
+      }
+      const lobbyId = parseChannelId(lobbyToken);
+      const lobby = lobbyId ? await guild.channels.fetch(lobbyId).catch(() => null) : null;
+      if (!lobby || lobby.guildId !== guild.id) {
+        await reply("❌ I couldn't find that channel in this server. Mention a voice channel from this server.");
+        return;
+      }
+      if (lobby.type !== ChannelType.GuildVoice) {
+        await reply("❌ The lobby must be a voice channel (not a stage, text channel, or category).");
+        return;
+      }
+
+      let categoryId: string | null = null;
+      if (args[2]) {
+        const parsedCategoryId = parseChannelId(args[2]);
+        const category = parsedCategoryId
+          ? await guild.channels.fetch(parsedCategoryId).catch(() => null)
+          : null;
+        if (!category || category.guildId !== guild.id) {
+          await reply("❌ I couldn't find that category in this server.");
+          return;
+        }
+        if (category.type !== ChannelType.GuildCategory) {
+          await reply("❌ The category must be a channel category.");
+          return;
+        }
+        categoryId = category.id;
+      }
+
+      await setJtcConfig(guild.id, lobby.id, categoryId);
+      await reply(
+        `✅ Join to Create is on. Members who join <#${lobby.id}> get their own voice channel` +
+          (categoryId ? ` in <#${categoryId}>.` : " in the lobby's category."),
+      );
+      return;
+    }
+
+    if (sub === "remove" || sub === "disable") {
+      const removed = await removeJtcConfig(guild.id);
+      const env = envJtcConfig();
+      const envActive = env !== null && guild.channels.cache.has(env.lobbyId);
+      if (envActive) {
+        await reply(
+          `${removed ? "✅ Server settings removed." : "ℹ️ No server settings were saved."} ` +
+            `Join to Create is still active through the bot's default lobby <#${env.lobbyId}>.`,
+        );
+      } else {
+        await reply(
+          removed ? "✅ Join to Create is now off." : "ℹ️ Join to Create was not configured.",
+        );
+      }
+      return;
+    }
+
+    if (sub === "status") {
+      const config = await getJtcConfig(guild.id);
+      if (!config || (config.source === "env" && !guild.channels.cache.has(config.lobbyId))) {
+        await reply("ℹ️ Join to Create is off. Use `!jtc set <#lobby> [#category]` to turn it on.");
+        return;
+      }
+      await reply(
+        [
+          "✨ Join to Create is on.",
+          `Lobby: <#${config.lobbyId}>`,
+          `Category: ${config.categoryId ? `<#${config.categoryId}>` : "same as the lobby"}`,
+          config.source === "env" ? "Source: bot default (environment)" : "Source: server settings",
+        ].join("\n"),
+      );
+      return;
+    }
+
+    await reply(JTC_USAGE);
+  } catch (err) {
+    logger.error({ err, guildId: guild.id, sub }, "Failed to run !jtc command");
+    await reply("❌ Something went wrong running that command. Please try again.").catch(() => {});
+  }
+}
+
 export async function handleJtcInteraction(
   interaction: ButtonInteraction | ModalSubmitInteraction,
 ): Promise<void> {
@@ -484,17 +659,18 @@ export async function handleVoiceStateUpdate(
   oldState: VoiceState,
   newState: VoiceState,
 ): Promise<void> {
-  const lobbyId = process.env["JTC_LOBBY_CHANNEL_ID"];
-  if (!lobbyId) return;
-
   // Ignore events caused by the bot itself, and by other bots.
   const member = newState.member ?? oldState.member;
   if (!member || member.user.bot || member.id === client.user?.id) return;
 
   if (oldState.channelId === newState.channelId) return;
 
-  if (newState.channelId === lobbyId) {
-    await createTempChannel(client, newState);
+  // Guild config (set with !jtc) takes priority; env vars are the fallback.
+  if (newState.channelId) {
+    const config = await getJtcConfig(newState.guild.id);
+    if (config && newState.channelId === config.lobbyId) {
+      await createTempChannel(client, newState, config);
+    }
   }
 
   if (oldState.channelId && oldState.channelId !== newState.channelId) {
