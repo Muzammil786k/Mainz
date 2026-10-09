@@ -35,6 +35,7 @@ import {
   handleWelcomeCommand,
 } from "./automation-commands";
 import { withPremiumReplies } from "./presentation";
+import { handleVcCommand } from "./joinToCreate";
 
 const PREFIX = "g";
 
@@ -148,6 +149,11 @@ export async function handleMessage(client: Client, incomingMessage: Message): P
     await handleShip(message);
   } else if (lower === "!steal" || lower.startsWith("!steal ")) {
     await handleSteal(message);
+
+  // ── Voice (Join to Create) ────────────────────────────────────────────────
+  } else if (lower === "!vc" || lower.startsWith("!vc ")) {
+    const args = content.split(/\s+/).slice(1);
+    await handleVcCommand(message, args);
   } else {
     const command = lower.match(/^!([a-z]+)(?:\s|$)/)?.[1] as SocialActionName | undefined;
     if (command && Object.hasOwn(SOCIAL_ACTIONS, command)) {
