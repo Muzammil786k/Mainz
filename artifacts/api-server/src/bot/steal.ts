@@ -33,8 +33,10 @@ interface ProcessedImage {
 }
 
 const CUSTOM_EMOJI_PATTERN = /<(a?):([a-zA-Z0-9_]{2,32}):(\d{17,20})>/;
-const UNICODE_EMOJI_PATTERN =
-  /(?:\p{Regional_Indicator}{2}|[#*0-9]\uFE0F?\u20E3|\p{Extended_Pictographic}(?:\uFE0F|\uFE0E)?(?:\p{Emoji_Modifier})?(?:\u200D\p{Extended_Pictographic}(?:\uFE0F|\uFE0E)?(?:\p{Emoji_Modifier})?)*)/u;
+const CUSTOM_EMOJI_GLOBAL_PATTERN = new RegExp(CUSTOM_EMOJI_PATTERN.source, "g");
+const UNICODE_EMOJI_GLOBAL_PATTERN =
+  /(?:\p{Regional_Indicator}{2}|[#*0-9]\uFE0F?\u20E3|\p{Extended_Pictographic}(?:\uFE0F|\uFE0E)?(?:\p{Emoji_Modifier})?(?:\u200D\p{Extended_Pictographic}(?:\uFE0F|\uFE0E)?(?:\p{Emoji_Modifier})?)*)/gu;
+const MAX_EMOJIS_PER_STEAL = 20;
 const MAX_EMOJI_BYTES = 256 * 1024;
 const MAX_STICKER_BYTES = 512 * 1024;
 const MAX_SOURCE_IMAGE_BYTES = 8 * 1024 * 1024;
@@ -49,31 +51,56 @@ let lottieRuntime:
     }>
   | undefined;
 
-function emojiFromMessage(content: string): StealableAsset | null {
-  const customMatch = CUSTOM_EMOJI_PATTERN.exec(content);
-  const unicodeMatch = UNICODE_EMOJI_PATTERN.exec(content);
-  if (customMatch && (!unicodeMatch || customMatch.index <= unicodeMatch.index)) {
-    const [, animatedFlag, emojiName, emojiId] = customMatch;
-    if (!emojiName || !emojiId) return null;
+function customEmojiAsset(customMatch: RegExpMatchArray): StealableAsset | null {
+  const [, animatedFlag, emojiName, emojiId] = customMatch;
+  if (!emojiName || !emojiId) return null;
 
-    const extension = animatedFlag === "a" ? "gif" : "png";
-    const emojiUrl = `https://cdn.discordapp.com/emojis/${emojiId}.${extension}?size=128`;
-    const stickerUrl = `https://cdn.discordapp.com/emojis/${emojiId}.${extension}?size=512`;
-    return {
-      name: emojiName,
-      emoji: customMatch[0],
-      display: customMatch[0],
-      emojiUrl,
-      stickerUrl,
-      extension,
-      sourceType: "emoji",
-      twemojiArtwork: false,
-    };
+  const extension = animatedFlag === "a" ? "gif" : "png";
+  const emojiUrl = `https://cdn.discordapp.com/emojis/${emojiId}.${extension}?size=128`;
+  const stickerUrl = `https://cdn.discordapp.com/emojis/${emojiId}.${extension}?size=512`;
+  return {
+    name: emojiName,
+    emoji: customMatch[0],
+    display: customMatch[0],
+    emojiUrl,
+    stickerUrl,
+    extension,
+    sourceType: "emoji",
+    twemojiArtwork: false,
+  };
+}
+
+function emojisFromMessage(content: string): StealableAsset[] {
+  const found: { index: number; asset: StealableAsset }[] = [];
+  const customRanges: { start: number; end: number }[] = [];
+
+  for (const match of content.matchAll(CUSTOM_EMOJI_GLOBAL_PATTERN)) {
+    const index = match.index ?? 0;
+    customRanges.push({ start: index, end: index + match[0].length });
+    const asset = customEmojiAsset(match);
+    if (asset) found.push({ index, asset });
   }
 
-  const emoji = unicodeMatch?.[0];
-  if (!emoji) return null;
+  for (const match of content.matchAll(UNICODE_EMOJI_GLOBAL_PATTERN)) {
+    const index = match.index ?? 0;
+    if (customRanges.some((range) => index >= range.start && index < range.end)) continue;
+    const asset = unicodeEmojiAsset(match[0]);
+    if (asset) found.push({ index, asset });
+  }
 
+  found.sort((a, b) => a.index - b.index);
+
+  const seen = new Set<string>();
+  const assets: StealableAsset[] = [];
+  for (const { asset } of found) {
+    if (seen.has(asset.emojiUrl)) continue;
+    seen.add(asset.emojiUrl);
+    assets.push(asset);
+  }
+  return assets;
+}
+
+function unicodeEmojiAsset(emoji: string): StealableAsset | null {
   const codepoints = Array.from(emoji)
     .map((character) => character.codePointAt(0))
     .filter((codepoint): codepoint is number => codepoint !== undefined && codepoint !== 0xfe0e && codepoint !== 0xfe0f)
@@ -318,17 +345,68 @@ async function fetchAssetImage(
   return { data: image, extension };
 }
 
-async function addEmoji(message: Message, source: StealableAsset): Promise<string> {
+async function createEmoji(message: Message, source: StealableAsset) {
   const guild = message.guild!;
   const name = uniqueAssetName(message, source.name, "emoji");
   const image = await fetchAssetImage(source, "emoji");
   const mimeType = image.extension === "gif" ? "image/gif" : "image/png";
-  const created = await guild.emojis.create({
+  return guild.emojis.create({
     attachment: `data:${mimeType};base64,${image.data.toString("base64")}`,
     name,
     reason: `Requested through !steal by ${message.author.id}`,
   });
+}
+
+async function addEmoji(message: Message, source: StealableAsset): Promise<string> {
+  const created = await createEmoji(message, source);
   return `✅ Added ${created} as the server emoji **:${created.name}:**.`;
+}
+
+async function addEmojis(
+  message: Message,
+  sources: StealableAsset[],
+  skipped: number,
+): Promise<string> {
+  const added: string[] = [];
+  const failed: string[] = [];
+
+  // Uploads run strictly one after another to stay within Discord rate limits.
+  for (const source of sources) {
+    try {
+      const created = await createEmoji(message, source);
+      added.push(`${created}`);
+    } catch (error) {
+      logger.warn(
+        { err: error, guildId: message.guild?.id },
+        "Could not add a stolen emoji",
+      );
+      const reason =
+        error instanceof Error && error.message.includes("too large")
+          ? error.message
+          : "Discord rejected the upload (the server may be out of emoji slots)";
+      failed.push(`:${safeAssetName(source.name, 32)}: (${reason})`);
+    }
+  }
+
+  const lines: string[] = [];
+  if (added.length > 0) {
+    lines.push(
+      `✅ Added ${added.length} of ${sources.length} emojis: ${added.join(" ")}`,
+    );
+  } else {
+    lines.push(`❌ Couldn't add any of the ${sources.length} emojis.`);
+  }
+  if (failed.length > 0) {
+    lines.push(`❌ Failed: ${failed.join(", ")}`);
+  }
+  if (skipped > 0) {
+    lines.push(
+      `Only the first ${MAX_EMOJIS_PER_STEAL} emojis were processed; ${skipped} more ${skipped === 1 ? "was" : "were"} skipped.`,
+    );
+  }
+  const summary = lines.join("\n");
+  // Keep room for the artwork credit within Discord's 2000 character limit.
+  return summary.length > 1800 ? `${summary.slice(0, 1797)}...` : summary;
 }
 
 async function addSticker(message: Message, source: StealableAsset): Promise<string> {
@@ -349,8 +427,8 @@ async function addSticker(message: Message, source: StealableAsset): Promise<str
   return `✅ Added **${created.name}** as a server sticker.`;
 }
 
-function withArtworkCredit(text: string, source: StealableAsset): string {
-  return source.twemojiArtwork
+function withArtworkCredit(text: string, sources: StealableAsset[]): string {
+  return sources.some((source) => source.twemojiArtwork)
     ? `${text}\nArtwork: Twemoji (CC BY 4.0) — https://github.com/jdecked/twemoji`
     : text;
 }
@@ -407,7 +485,12 @@ export async function handleSteal(message: Message): Promise<void> {
   const sourceSticker = stickers
     .map(stickerFromMessage)
     .find((asset): asset is StealableAsset => asset !== null);
-  const source = sourceSticker ?? emojiFromMessage(searchableContent);
+  const allEmojis = sourceSticker ? [] : emojisFromMessage(searchableContent);
+  const skipped = Math.max(0, allEmojis.length - MAX_EMOJIS_PER_STEAL);
+  const sources: StealableAsset[] = sourceSticker
+    ? [sourceSticker]
+    : allEmojis.slice(0, MAX_EMOJIS_PER_STEAL);
+  const source = sources[0];
   if (!source) {
     await message.reply({
       content:
@@ -427,8 +510,12 @@ export async function handleSteal(message: Message): Promise<void> {
       .setLabel("Add as sticker")
       .setStyle(ButtonStyle.Secondary),
   );
+  const promptText =
+    sources.length > 1
+      ? `Found ${sources.length} emojis${skipped > 0 ? ` (${allEmojis.length} in the message; only the first ${MAX_EMOJIS_PER_STEAL} will be processed)` : ""}. Choose how to add them to this server. "Add as sticker" only uses the first emoji.`
+      : `Found ${source.display}. Choose how to add it to this server.`;
   const choiceMessage = await message.reply({
-    content: `Found ${source.display}. Choose how to add it to this server.`,
+    content: promptText,
     components: [buttons],
     allowedMentions: { parse: [], repliedUser: false },
   });
@@ -470,12 +557,15 @@ export async function handleSteal(message: Message): Promise<void> {
     await interaction.deferUpdate();
 
     try {
-      const result =
-        interaction.customId === "steal_add_emoji"
-          ? await addEmoji(message, source)
-          : await addSticker(message, source);
+      const addingEmoji = interaction.customId === "steal_add_emoji";
+      const processed = addingEmoji ? sources : [source];
+      const result = addingEmoji
+        ? sources.length > 1
+          ? await addEmojis(message, sources, skipped)
+          : await addEmoji(message, source)
+        : await addSticker(message, source);
       await choiceMessage.edit({
-        content: withArtworkCredit(result, source),
+        content: withArtworkCredit(result, processed),
         components: [],
       });
     } catch (error) {
