@@ -14,6 +14,7 @@ import { logger } from "../lib/logger";
 import { SOCIAL_ACTION_NAMES, SOCIAL_ACTIONS } from "./social";
 import { bumpStickyForChannel } from "./automation";
 import { premiumEmbed } from "./presentation";
+import { handleVoiceSlashCommand } from "./joinToCreate";
 
 const slashCommands = [
   new SlashCommandBuilder()
@@ -229,6 +230,43 @@ const slashCommands = [
     .setDescription("Get a playful compatibility score for two members.")
     .addUserOption((o) => o.setName("user1").setDescription("First member").setRequired(true))
     .addUserOption((o) => o.setName("user2").setDescription("Second member").setRequired(true)),
+  new SlashCommandBuilder()
+    .setName("voice")
+    .setDescription("Manage your temporary voice channel.")
+    .addSubcommand((sub) => sub.setName("lock").setDescription("Prevent others from joining your channel."))
+    .addSubcommand((sub) => sub.setName("unlock").setDescription("Allow everyone to join your channel."))
+    .addSubcommand((sub) => sub.setName("hide").setDescription("Hide your channel from everyone."))
+    .addSubcommand((sub) => sub.setName("show").setDescription("Make your channel visible to everyone."))
+    .addSubcommand((sub) =>
+      sub
+        .setName("limit")
+        .setDescription("Set the user limit of your channel.")
+        .addIntegerOption((o) => o.setName("amount").setDescription("0 for no limit, up to 99").setMinValue(0).setMaxValue(99).setRequired(true)),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("rename")
+        .setDescription("Rename your channel.")
+        .addStringOption((o) => o.setName("name").setDescription("New channel name").setMinLength(1).setMaxLength(100).setRequired(true)),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("permit")
+        .setDescription("Allow a user to see and join your channel.")
+        .addUserOption((o) => o.setName("user").setDescription("User to permit").setRequired(true)),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("reject")
+        .setDescription("Block a user from your channel and disconnect them.")
+        .addUserOption((o) => o.setName("user").setDescription("User to reject").setRequired(true)),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("kick")
+        .setDescription("Disconnect a user from your channel.")
+        .addUserOption((o) => o.setName("user").setDescription("User to kick").setRequired(true)),
+    ),
   ...SOCIAL_ACTION_NAMES.map((name) =>
     new SlashCommandBuilder()
       .setName(name)
@@ -418,6 +456,11 @@ export async function handleSlashCommand(client: Client, interaction: ChatInputC
   }
 
   try {
+    if (interaction.commandName === "voice") {
+      await handleVoiceSlashCommand(interaction);
+      return;
+    }
+
     if (Object.hasOwn(SOCIAL_ACTIONS, interaction.commandName) || interaction.commandName === "ship") {
       await interaction.deferReply();
     }
