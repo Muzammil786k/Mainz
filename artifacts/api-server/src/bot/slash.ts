@@ -190,6 +190,26 @@ const slashCommands = [
         .addChannelOption((o) => o.setName("channel").setDescription("Text channel").addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setRequired(true)),
     ),
   new SlashCommandBuilder()
+    .setName("jtc")
+    .setDescription("Configure Join to Create temporary voice channels.")
+    .addSubcommand((sub) =>
+      sub
+        .setName("set")
+        .setDescription("Set the lobby voice channel and optional category.")
+        .addChannelOption((o) => o.setName("channel").setDescription("Lobby voice channel").addChannelTypes(ChannelType.GuildVoice).setRequired(true))
+        .addChannelOption((o) => o.setName("category").setDescription("Category for new channels (defaults to the lobby's category)").addChannelTypes(ChannelType.GuildCategory)),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("remove")
+        .setDescription("Turn off Join to Create for this server."),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("status")
+        .setDescription("Show the current lobby and category."),
+    ),
+  new SlashCommandBuilder()
     .setName("welcome")
     .setDescription("Configure server welcome messages.")
     .addSubcommand((sub) =>
@@ -324,6 +344,13 @@ function buildLegacyContent(interaction: ChatInputCommandInteraction): string {
     case "announce": {
       const channel = interaction.options.getChannel("channel");
       return `!announce ${channel ? `<#${channel.id}>` : ""} ${string("message")}`.trim();
+    }
+    case "jtc": {
+      const action = interaction.options.getSubcommand(false) ?? "status";
+      if (action !== "set") return `!jtc ${action}`;
+      const lobby = interaction.options.getChannel("channel");
+      const category = interaction.options.getChannel("category");
+      return `!jtc set ${lobby ? `<#${lobby.id}>` : ""} ${category ? `<#${category.id}>` : ""}`.trim();
     }
     case "autoreact":
     case "sticky":

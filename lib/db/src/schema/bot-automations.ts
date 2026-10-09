@@ -15,6 +15,13 @@ export const botChannelAutomationsTable = pgTable(
   ],
 );
 
+export const botJoinToCreateTable = pgTable("bot_join_to_create", {
+  guildId: text("guild_id").primaryKey(),
+  lobbyChannelId: text("lobby_channel_id").notNull(),
+  categoryId: text("category_id"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const botGuildMessagesTable = pgTable("bot_guild_messages", {
   guildId: text("guild_id").primaryKey(),
   welcomeChannelId: text("welcome_channel_id"),
