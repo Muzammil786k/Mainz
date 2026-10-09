@@ -9,7 +9,7 @@ import { handleMessage } from "./commands";
 import { handleSlashCommand, registerSlashCommands } from "./slash";
 import { handleSocialBackButton } from "./social";
 import { giveaways, buildGiveawayEmbed } from "./giveaway";
-import { handleVoiceStateUpdate } from "./joinToCreate";
+import { handleJtcInteraction, handleVoiceStateUpdate } from "./joinToCreate";
 import { logger } from "../lib/logger";
 import { processUserMessageAutomations, sendMemberMessage } from "./automation";
 
@@ -76,6 +76,17 @@ export function createBot(): Client {
   client.on("interactionCreate", async (interaction) => {
     if (interaction.isButton() && interaction.customId.startsWith("social:back:")) {
       await handleSocialBackButton(interaction);
+      return;
+    }
+    if (
+      (interaction.isButton() || interaction.isModalSubmit()) &&
+      interaction.customId.startsWith("jtc:")
+    ) {
+      try {
+        await handleJtcInteraction(interaction);
+      } catch (err) {
+        logger.error({ err, customId: interaction.customId }, "Error handling join-to-create interaction");
+      }
       return;
     }
     if (!interaction.isChatInputCommand()) return;

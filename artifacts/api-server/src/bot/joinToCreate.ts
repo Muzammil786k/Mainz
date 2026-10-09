@@ -1,13 +1,85 @@
 import {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
   ChannelType,
+  EmbedBuilder,
+  MessageFlags,
+  ModalBuilder,
   PermissionFlagsBits,
+  TextInputBuilder,
+  TextInputStyle,
+  type ButtonInteraction,
   type Client,
+  type ModalSubmitInteraction,
+  type VoiceChannel,
   type VoiceState,
 } from "discord.js";
 import { logger } from "../lib/logger";
 
-// Temporary channel IDs created by the bot. State is in-memory only.
-const tempChannels = new Set<string>();
+// Temporary channels created by the bot, mapped channelId -> ownerId. State is in-memory only.
+const tempChannels = new Map<string, string>();
+
+const JTC_PREFIX = "jtc:";
+const RENAME_MODAL_ID = "jtc:rename_modal";
+const RENAME_INPUT_ID = "name";
+const USER_LIMITS = [0, 2, 5, 10];
+const OWNER_ONLY_MESSAGE = "Only the channel owner can use this.";
+
+function buildControlPanel(ownerId: string): {
+  embeds: EmbedBuilder[];
+  components: ActionRowBuilder<ButtonBuilder>[];
+} {
+  const embed = new EmbedBuilder()
+    .setTitle("Voice Channel Controls")
+    .setDescription(
+      [
+        `Owner: <@${ownerId}>`,
+        "",
+        "🔒 Lock / 🔓 Unlock — control who can join",
+        "🙈 Hide / 👁️ Show — control who can see the channel",
+        "👥 Limit — cycle the user limit (none, 2, 5, 10)",
+        "✏️ Rename — change the channel name",
+        "👑 Claim — take ownership when the owner has left",
+      ].join("\n"),
+    );
+
+  const button = (id: string, label: string): ButtonBuilder =>
+    new ButtonBuilder().setCustomId(`${JTC_PREFIX}${id}`).setLabel(label).setStyle(ButtonStyle.Secondary);
+
+  const rowOne = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    button("lock", "Lock"),
+    button("unlock", "Unlock"),
+    button("hide", "Hide"),
+    button("show", "Show"),
+  );
+  const rowTwo = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    button("limit", "Limit"),
+    button("rename", "Rename"),
+    button("claim", "Claim"),
+  );
+
+  return { embeds: [embed], components: [rowOne, rowTwo] };
+}
+
+async function transferOwnership(
+  channel: VoiceChannel,
+  newOwnerId: string,
+  oldOwnerId: string,
+): Promise<void> {
+  await channel.permissionOverwrites.edit(newOwnerId, {
+    ViewChannel: true,
+    Connect: true,
+    ManageChannels: true,
+    MoveMembers: true,
+  });
+  if (oldOwnerId !== newOwnerId) {
+    await channel.permissionOverwrites.edit(oldOwnerId, {
+      ManageChannels: null,
+      MoveMembers: null,
+    });
+  }
+}
 
 // Members currently having a channel created for them, to avoid duplicates on rapid rejoins.
 const pendingMembers = new Set<string>();
@@ -21,7 +93,7 @@ async function createTempChannel(client: Client, newState: VoiceState): Promise<
   if (pendingMembers.has(pendingKey)) return;
   pendingMembers.add(pendingKey);
 
-  let created: Awaited<ReturnType<typeof newState.guild.channels.create>> | null = null;
+  let created: VoiceChannel | null = null;
   try {
     const categoryId = process.env["JTC_CATEGORY_ID"] || lobby.parentId || undefined;
 
@@ -41,7 +113,7 @@ async function createTempChannel(client: Client, newState: VoiceState): Promise<
         },
       ],
     });
-    tempChannels.add(created.id);
+    tempChannels.set(created.id, member.id);
 
     // The member may have left the lobby while the channel was being created.
     if (member.voice.channelId !== lobby.id) {
@@ -55,6 +127,11 @@ async function createTempChannel(client: Client, newState: VoiceState): Promise<
       { guildId: newState.guild.id, userId: member.id, channelId: created.id },
       "Created join-to-create channel",
     );
+
+    // A failure to post the panel must not tear down a channel the member is already in.
+    await created.send(buildControlPanel(member.id)).catch((sendErr) => {
+      logger.error({ err: sendErr, channelId: created?.id }, "Failed to send join-to-create control panel");
+    });
   } catch (err) {
     logger.error({ err, guildId: newState.guild.id, userId: member.id }, "Failed to create join-to-create channel");
     if (created) {
@@ -71,7 +148,28 @@ async function createTempChannel(client: Client, newState: VoiceState): Promise<
 async function cleanupTempChannel(oldState: VoiceState): Promise<void> {
   const channel = oldState.channel;
   if (!channel || !tempChannels.has(channel.id)) return;
-  if (channel.members.size !== 0) return;
+
+  if (channel.members.size !== 0) {
+    // The owner left but others remain: hand the channel to the first remaining member.
+    const ownerId = tempChannels.get(channel.id);
+    if (!ownerId || channel.members.has(ownerId) || channel.type !== ChannelType.GuildVoice) return;
+
+    const nextOwner = channel.members.find((m) => !m.user.bot);
+    if (!nextOwner) return;
+
+    tempChannels.set(channel.id, nextOwner.id);
+    try {
+      await transferOwnership(channel, nextOwner.id, ownerId);
+      logger.info(
+        { guildId: oldState.guild.id, channelId: channel.id, ownerId: nextOwner.id },
+        "Transferred join-to-create channel ownership",
+      );
+      await channel.send({ content: `👑 <@${nextOwner.id}> is now the owner of this channel.` });
+    } catch (err) {
+      logger.error({ err, guildId: oldState.guild.id, channelId: channel.id }, "Failed to transfer join-to-create ownership");
+    }
+    return;
+  }
 
   tempChannels.delete(channel.id);
   try {
@@ -79,6 +177,150 @@ async function cleanupTempChannel(oldState: VoiceState): Promise<void> {
     logger.info({ guildId: oldState.guild.id, channelId: channel.id }, "Deleted empty join-to-create channel");
   } catch (err) {
     logger.error({ err, guildId: oldState.guild.id, channelId: channel.id }, "Failed to delete join-to-create channel");
+  }
+}
+
+function resolveTempChannel(interaction: ButtonInteraction | ModalSubmitInteraction): VoiceChannel | null {
+  const channel = interaction.guild?.channels.cache.get(interaction.channelId ?? "");
+  if (!channel || channel.type !== ChannelType.GuildVoice || !tempChannels.has(channel.id)) return null;
+  return channel;
+}
+
+async function handleJtcButton(interaction: ButtonInteraction): Promise<void> {
+  const action = interaction.customId.slice(JTC_PREFIX.length);
+  const guild = interaction.guild;
+  const channel = resolveTempChannel(interaction);
+  if (!guild || !channel) {
+    await interaction.reply({
+      content: "This channel is no longer a temporary voice channel.",
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  const ownerId = tempChannels.get(channel.id);
+
+  if (action === "claim") {
+    if (ownerId === interaction.user.id) {
+      await interaction.reply({ content: "You already own this channel.", flags: MessageFlags.Ephemeral });
+      return;
+    }
+    if (!channel.members.has(interaction.user.id)) {
+      await interaction.reply({
+        content: "You must be in the voice channel to claim it.",
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+    if (ownerId && channel.members.has(ownerId)) {
+      await interaction.reply({
+        content: "The channel owner is still in the channel.",
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    tempChannels.set(channel.id, interaction.user.id);
+    try {
+      await transferOwnership(channel, interaction.user.id, ownerId ?? interaction.user.id);
+    } catch (err) {
+      if (ownerId) tempChannels.set(channel.id, ownerId);
+      throw err;
+    }
+    await interaction.editReply({ content: "You are now the owner of this channel." });
+    return;
+  }
+
+  if (interaction.user.id !== ownerId) {
+    await interaction.reply({ content: OWNER_ONLY_MESSAGE, flags: MessageFlags.Ephemeral });
+    return;
+  }
+
+  if (action === "rename") {
+    const modal = new ModalBuilder().setCustomId(RENAME_MODAL_ID).setTitle("Rename Channel");
+    const input = new TextInputBuilder()
+      .setCustomId(RENAME_INPUT_ID)
+      .setLabel("New channel name")
+      .setStyle(TextInputStyle.Short)
+      .setMinLength(1)
+      .setMaxLength(100)
+      .setValue(channel.name.slice(0, 100))
+      .setRequired(true);
+    modal.addComponents(new ActionRowBuilder<TextInputBuilder>().addComponents(input));
+    await interaction.showModal(modal);
+    return;
+  }
+
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  const everyone = guild.roles.everyone;
+
+  switch (action) {
+    case "lock":
+      await channel.permissionOverwrites.edit(everyone, { Connect: false });
+      await interaction.editReply({ content: "🔒 Channel locked." });
+      break;
+    case "unlock":
+      await channel.permissionOverwrites.edit(everyone, { Connect: null });
+      await interaction.editReply({ content: "🔓 Channel unlocked." });
+      break;
+    case "hide":
+      await channel.permissionOverwrites.edit(everyone, { ViewChannel: false });
+      await interaction.editReply({ content: "🙈 Channel hidden." });
+      break;
+    case "show":
+      await channel.permissionOverwrites.edit(everyone, { ViewChannel: null });
+      await interaction.editReply({ content: "👁️ Channel visible." });
+      break;
+    case "limit": {
+      const index = USER_LIMITS.indexOf(channel.userLimit);
+      const next = USER_LIMITS[(index + 1) % USER_LIMITS.length] ?? 0;
+      await channel.setUserLimit(next);
+      await interaction.editReply({
+        content: next === 0 ? "👥 User limit removed." : `👥 User limit set to ${next}.`,
+      });
+      break;
+    }
+    default:
+      await interaction.editReply({ content: "Unknown action." });
+  }
+}
+
+async function handleJtcRenameSubmit(interaction: ModalSubmitInteraction): Promise<void> {
+  const channel = resolveTempChannel(interaction);
+  if (!channel) {
+    await interaction.reply({
+      content: "This channel is no longer a temporary voice channel.",
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+  if (tempChannels.get(channel.id) !== interaction.user.id) {
+    await interaction.reply({ content: OWNER_ONLY_MESSAGE, flags: MessageFlags.Ephemeral });
+    return;
+  }
+
+  const name = interaction.fields.getTextInputValue(RENAME_INPUT_ID).trim().slice(0, 100);
+  if (!name) {
+    await interaction.reply({ content: "Channel name cannot be empty.", flags: MessageFlags.Ephemeral });
+    return;
+  }
+
+  // Discord rate limits channel renames, so acknowledge first and edit once the rename completes.
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  await channel.setName(name, "Join to Create: renamed by owner");
+  await interaction.editReply({ content: `✏️ Channel renamed to **${name}**.` });
+}
+
+export async function handleJtcInteraction(
+  interaction: ButtonInteraction | ModalSubmitInteraction,
+): Promise<void> {
+  if (!interaction.customId.startsWith(JTC_PREFIX)) return;
+
+  if (interaction.isButton()) {
+    await handleJtcButton(interaction);
+  } else if (interaction.isModalSubmit() && interaction.customId === RENAME_MODAL_ID) {
+    await handleJtcRenameSubmit(interaction);
   }
 }
 
