@@ -82,7 +82,7 @@ function page3(): EmbedBuilder {
       { name: "`!role @user @role` • `/role`", value: "Add or remove a role from a member.\n*(Manage Roles)*" },
       { name: "`!nick @user <name|reset>` • `/nick`", value: "Change or reset a member nickname.\n*(Manage Nicknames)*" },
       { name: "`!announce #channel <message>` • `/announce`", value: "Send an announcement embed to a channel.\n*(Manage Server)*" },
-      { name: "`!vc help` • `!vc <subcommand>`", value: "Manage your temporary voice channel: `lock` `unlock` `hide` `show` `limit <n>` `name <name>` `transfer|owner @user` `permit @user` `reject @user` `kick @user` `pull|move @user` `claim` `info`.\n*(Channel owner; `info` and `claim` are open to members in the channel)*" },
+      { name: "`!voice help` • `!v help` • `/voice help`", value: "Manage your Join to Create channel: `info` `bump` `lock` `unlock` `name <name>` `size <n>` `bitrate <kbps>` `permit|unpermit @user` `kick|ban|unban @user` `unbanall` `reset` `claim` `transfer @user`. `!vc` remains an alias. Channel controls are owner-only; `info`, `claim`, and help are available to everyone." },
       { name: "`!jtc set #lobby [#category]` • `/jtc set`", value: "Choose the Join to Create lobby voice channel and optional category.\n*(Manage Server)*" },
       { name: "`!jtc remove|disable` • `!jtc status` • `/jtc`", value: "Turn off Join to Create, or show the configured lobby and category.\n*(Manage Server)*" },
       { name: "`!ticket help` • `!ticket new|open`", value: "Show ticket help or open a private support ticket." },

@@ -180,6 +180,12 @@ export async function handleMessage(
     await handleSteal(message);
 
   // ── Voice (Join to Create) ────────────────────────────────────────────────
+  } else if (lower === "!voice" || lower.startsWith("!voice ")) {
+    const args = content.split(/\s+/).slice(1);
+    await handleVcCommand(message, args);
+  } else if (lower === "!v" || lower.startsWith("!v ")) {
+    const args = content.split(/\s+/).slice(1);
+    await handleVcCommand(message, args);
   } else if (lower === "!vc" || lower.startsWith("!vc ")) {
     const args = content.split(/\s+/).slice(1);
     await handleVcCommand(message, args);

@@ -25,7 +25,7 @@ Members who join a designated lobby voice channel get their own temporary voice 
 - `JTC_LOBBY_CHANNEL_ID` — ID of the lobby voice channel (required; the feature is disabled when unset)
 - `JTC_CATEGORY_ID` — ID of the category for created channels (optional; defaults to the lobby's category)
 
-Each temporary channel's chat gets a control panel with Lock, Unlock, Hide, Show, Limit (cycles 0/2/5/10), Rename and Claim buttons; all but Claim are owner-only, and ownership passes to another member when the owner leaves.
+Each created channel is explicitly visible and joinable, even when its parent category denies those permissions. Its chat welcomes and pings the owner with a single **Commands** button. Clicking it opens a private control panel with action buttons and the full command list; parameterized actions prompt for their values. Owners can also use `!voice` (aliases `!v` and `!vc`) or `/voice help`. Bumping moves a channel to the top of its category with a one-hour cooldown; bitrate is limited by the server's boost tier. Ownership passes to another member when the owner leaves.
 
 The bot needs the Manage Channels and Move Members permissions, and the Guild Voice States gateway intent. Temporary channels are tracked in memory, so channels left over from before a restart are not cleaned up automatically.
 

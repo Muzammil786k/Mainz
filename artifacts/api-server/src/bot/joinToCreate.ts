@@ -85,48 +85,69 @@ const tempChannels = new Map<string, string>();
 const JTC_PREFIX = "jtc:";
 const RENAME_MODAL_ID = "jtc:rename_modal";
 const TRANSFER_MODAL_ID = "jtc:transfer_modal";
+const VOICE_COMMAND_MODAL_PREFIX = "jtc:command_modal:";
 const RENAME_INPUT_ID = "name";
 const TRANSFER_INPUT_ID = "owner";
+const VOICE_COMMAND_INPUT_ID = "value";
 const USER_LIMITS = [0, 2, 5, 10];
 const OWNER_ONLY_MESSAGE = "Only the channel owner can use this.";
+const BUMP_COOLDOWN_MS = 60 * 60 * 1000;
+const lastBumpAt = new Map<string, number>();
+const bannedMembersByChannel = new Map<string, Set<string>>();
 
-function buildControlPanel(ownerId: string): {
-  embeds: EmbedBuilder[];
-  components: ActionRowBuilder<ButtonBuilder>[];
-} {
-  const embed = new EmbedBuilder()
+function buildCommandPanel(): ActionRowBuilder<ButtonBuilder>[] {
+  const commands = [
+    ["info", "Info"],
+    ["bump", "Bump"],
+    ["lock", "Lock"],
+    ["unlock", "Unlock"],
+    ["size", "Size"],
+    ["bitrate", "Bitrate"],
+    ["rename", "Rename"],
+    ["permit", "Permit"],
+    ["unpermit", "Unpermit"],
+    ["kick", "Kick"],
+    ["pull", "Pull"],
+    ["ban", "Ban"],
+    ["unban", "Unban"],
+    ["unbanall", "Unban all"],
+    ["reset", "Reset"],
+    ["claim", "Claim"],
+    ["transfer", "Transfer"],
+  ] as const;
+
+  const rows: ActionRowBuilder<ButtonBuilder>[] = [];
+  for (let index = 0; index < commands.length; index += 5) {
+    const row = new ActionRowBuilder<ButtonBuilder>();
+    for (const [action, label] of commands.slice(index, index + 5)) {
+      row.addComponents(
+        new ButtonBuilder()
+          .setCustomId(`${JTC_PREFIX}${action}`)
+          .setLabel(label)
+          .setStyle(ButtonStyle.Secondary),
+      );
+    }
+    rows.push(row);
+  }
+  return rows;
+}
+
+function buildWelcomePanel(): ActionRowBuilder<ButtonBuilder>[] {
+  return [
+    new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`${JTC_PREFIX}commands`)
+        .setLabel("Commands")
+        .setStyle(ButtonStyle.Primary),
+    ),
+  ];
+}
+
+function buildCommandHelpEmbed(): EmbedBuilder {
+  return new EmbedBuilder()
     .setColor(premiumColors.brand)
-    .setTitle("Voice Channel Controls")
-    .setDescription(
-      [
-        `Owner: <@${ownerId}>`,
-        "",
-        "🔒 Lock / 🔓 Unlock — control who can join",
-        "🙈 Hide / 👁️ Show — control who can see the channel",
-        "👥 Limit — cycle the user limit (none, 2, 5, 10)",
-        "✏️ Rename — change the channel name",
-        "👑 Transfer — pass ownership to another member in the VC",
-        "👑 Claim — take ownership when the owner has left",
-      ].join("\n"),
-    );
-
-  const button = (id: string, label: string): ButtonBuilder =>
-    new ButtonBuilder().setCustomId(`${JTC_PREFIX}${id}`).setLabel(label).setStyle(ButtonStyle.Secondary);
-
-  const rowOne = new ActionRowBuilder<ButtonBuilder>().addComponents(
-    button("lock", "Lock"),
-    button("unlock", "Unlock"),
-    button("hide", "Hide"),
-    button("show", "Show"),
-  );
-  const rowTwo = new ActionRowBuilder<ButtonBuilder>().addComponents(
-    button("limit", "Limit"),
-    button("rename", "Rename"),
-    button("transfer", "Transfer"),
-    button("claim", "Claim"),
-  );
-
-  return { embeds: [embed], components: [rowOne, rowTwo] };
+    .setTitle("Custom Voice Channel Commands")
+    .setDescription(VC_HELP_TEXT);
 }
 
 async function transferOwnership(
@@ -148,9 +169,9 @@ async function transferOwnership(
   }
 }
 
-type AccessAction = "lock" | "unlock" | "hide" | "show";
+type AccessAction = "lock" | "unlock";
 
-// Applies a lock/unlock/hide/show change to the @everyone overwrite and returns the confirmation text.
+// Applies a lock/unlock change to the @everyone overwrite and returns the confirmation text.
 async function applyAccessAction(
   channel: VoiceChannel,
   guild: Guild,
@@ -162,19 +183,13 @@ async function applyAccessAction(
       await channel.permissionOverwrites.edit(everyone, { Connect: false });
       return "🔒 Channel locked.";
     case "unlock":
-      await channel.permissionOverwrites.edit(everyone, { Connect: null });
+      await channel.permissionOverwrites.edit(everyone, { Connect: true });
       return "🔓 Channel unlocked.";
-    case "hide":
-      await channel.permissionOverwrites.edit(everyone, { ViewChannel: false });
-      return "🙈 Channel hidden.";
-    case "show":
-      await channel.permissionOverwrites.edit(everyone, { ViewChannel: null });
-      return "👁️ Channel visible.";
   }
 }
 
 function isAccessAction(action: string): action is AccessAction {
-  return action === "lock" || action === "unlock" || action === "hide" || action === "show";
+  return action === "lock" || action === "unlock";
 }
 
 // Returns a user-facing reason the claim is not allowed, or null when the claim is valid.
@@ -223,6 +238,13 @@ async function createTempChannel(
       parent: categoryId,
       permissionOverwrites: [
         {
+          id: newState.guild.roles.everyone.id,
+          allow: [
+            PermissionFlagsBits.ViewChannel,
+            PermissionFlagsBits.Connect,
+          ],
+        },
+        {
           id: member.id,
           allow: [
             PermissionFlagsBits.ViewChannel,
@@ -249,7 +271,19 @@ async function createTempChannel(
     );
 
     // A failure to post the panel must not tear down a channel the member is already in.
-    await created.send(buildControlPanel(member.id)).catch((sendErr) => {
+    const welcomeEmbed = new EmbedBuilder()
+      .setColor(premiumColors.brand)
+      .setTitle("Welcome to your channel")
+      .setDescription(
+        "Click **Commands** below to privately view the full command list and manage your channel.",
+      )
+      .setFooter({ text: "Your channel is ready." });
+    await created.send({
+      content: `<@${member.id}>`,
+      embeds: [welcomeEmbed],
+      components: buildWelcomePanel(),
+      allowedMentions: { users: [member.id] },
+    }).catch((sendErr) => {
       logger.error({ err: sendErr, channelId: created?.id }, "Failed to send join-to-create control panel");
     });
   } catch (err) {
@@ -320,6 +354,15 @@ async function handleJtcButton(interaction: ButtonInteraction): Promise<void> {
 
   const ownerId = tempChannels.get(channel.id);
 
+  if (action === "commands") {
+    await interaction.reply({
+      embeds: [buildCommandHelpEmbed()],
+      components: buildCommandPanel(),
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
   if (action === "claim") {
     const claimError = getClaimError(channel, interaction.user.id);
     if (claimError) {
@@ -366,10 +409,43 @@ async function handleJtcButton(interaction: ButtonInteraction): Promise<void> {
     return;
   }
 
+  if (["size", "bitrate", "permit", "unpermit", "kick", "pull", "ban", "unban"].includes(action)) {
+    const modal = new ModalBuilder()
+      .setCustomId(`${VOICE_COMMAND_MODAL_PREFIX}${action}`)
+      .setTitle(`${action[0]?.toUpperCase()}${action.slice(1)} Voice Channel`);
+    const input = new TextInputBuilder()
+      .setCustomId(VOICE_COMMAND_INPUT_ID)
+      .setLabel(action === "size" || action === "bitrate" ? "Enter a number" : "Member mention or user ID")
+      .setStyle(TextInputStyle.Short)
+      .setRequired(true);
+    if (action === "size") input.setPlaceholder("0-99; 0 removes the limit");
+    else if (action === "bitrate") input.setPlaceholder("8 kbps steps; server-tier maximum");
+    else input.setPlaceholder("@member or user ID");
+    modal.addComponents(new ActionRowBuilder<TextInputBuilder>().addComponents(input));
+    await interaction.showModal(modal);
+    return;
+  }
+
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   if (isAccessAction(action)) {
     await interaction.editReply({ content: await applyAccessAction(channel, guild, action) });
+    return;
+  }
+
+  if (action === "info") {
+    const overwrite = channel.permissionOverwrites.cache.get(guild.roles.everyone.id);
+    const embed = new EmbedBuilder()
+      .setColor(premiumColors.brand)
+      .setTitle("Voice Channel Settings")
+      .addFields(
+        { name: "Owner", value: `<@${ownerId}>`, inline: true },
+        { name: "Members", value: String(channel.members.size), inline: true },
+        { name: "Limit", value: channel.userLimit ? String(channel.userLimit) : "Unlimited", inline: true },
+        { name: "Bitrate", value: `${Math.round(channel.bitrate / 1000)} kbps`, inline: true },
+        { name: "Locked", value: overwrite?.deny.has(PermissionFlagsBits.Connect) ? "Yes" : "No", inline: true },
+      );
+    await interaction.editReply({ embeds: [embed] });
     return;
   }
 
@@ -380,6 +456,54 @@ async function handleJtcButton(interaction: ButtonInteraction): Promise<void> {
       await channel.setUserLimit(next);
       await interaction.editReply({
         content: next === 0 ? "👥 User limit removed." : `👥 User limit set to ${next}.`,
+      });
+      break;
+    }
+    case "bump": {
+      if (!channel.permissionsFor(guild.roles.everyone)?.has(PermissionFlagsBits.ViewChannel)) {
+        await interaction.editReply({ content: "This channel is not publicly visible, so it can't be bumped." });
+        break;
+      }
+      const lastBump = lastBumpAt.get(channel.id) ?? 0;
+      const remaining = BUMP_COOLDOWN_MS - (Date.now() - lastBump);
+      if (remaining > 0) {
+        await interaction.editReply({
+          content: `This channel can be bumped again <t:${Math.ceil((Date.now() + remaining) / 1000)}:R>.`,
+        });
+        break;
+      }
+      await channel.setPosition(0, { reason: "Join to Create: channel bumped by owner" });
+      lastBumpAt.set(channel.id, Date.now());
+      await interaction.editReply({ content: "Your public channel has been bumped to the top of its category." });
+      break;
+    }
+    case "reset": {
+      await channel.permissionOverwrites.edit(guild.roles.everyone, {
+        ViewChannel: true,
+        Connect: true,
+      });
+      const memberOverwrites = channel.permissionOverwrites.cache.filter(
+        (overwrite) => overwrite.type === 1 && overwrite.id !== ownerId,
+      );
+      for (const overwrite of memberOverwrites.values()) {
+        await channel.permissionOverwrites.delete(overwrite.id);
+      }
+      await channel.setUserLimit(0);
+      bannedMembersByChannel.delete(channel.id);
+      lastBumpAt.delete(channel.id);
+      await interaction.editReply({
+        content: "Channel reset: it's public, unlocked, and has no member limit or extra access rules.",
+      });
+      break;
+    }
+    case "unbanall": {
+      const bannedIds = bannedMembersByChannel.get(channel.id) ?? new Set<string>();
+      for (const userId of bannedIds) {
+        await channel.permissionOverwrites.delete(userId);
+      }
+      bannedMembersByChannel.delete(channel.id);
+      await interaction.editReply({
+        content: `Cleared ${bannedIds.size} channel ban${bannedIds.size === 1 ? "" : "s"}.`,
       });
       break;
     }
@@ -414,43 +538,48 @@ async function handleJtcRenameSubmit(interaction: ModalSubmitInteraction): Promi
   await interaction.editReply({ content: `✏️ Channel renamed to **${name}**.` });
 }
 
+export const VC_HELP_TEXT =
+"**Custom voice channel controls**\n" +
+"`!voice info` — view channel settings\n" +
+"`!voice bump` — move your public channel to the top (1-hour cooldown)\n" +
+"`!voice lock` / `!voice unlock` — control who can join\n" +
+"`!voice name <name>` — rename the channel\n" +
+"`!voice size <0-99>` — set member limit (0 removes it)\n" +
+"`!voice bitrate <8-256>` — set bitrate up to the server's boost-tier maximum\n" +
+"`!voice permit @user` / `!voice unpermit @user` — grant or clear member access\n" +
+"`!voice kick @user` — disconnect a member\n" +
+"`!voice pull @user` — pull a member from another voice channel\n" +
+"`!voice ban @user` / `!voice unban @user` / `!voice unbanall` — manage channel bans\n" +
+"`!voice reset` — restore public visibility, unlock, and remove the limit\n" +
+"`!voice claim` — claim an abandoned channel\n" +
+"`!voice transfer @user` — transfer ownership\n" +
+"`!voice help` — show this command list\n\n" +
+"Aliases: `!vc` and `!v`. `/voice help` is also available.";
+
 const VC_USAGE =
-  "Usage: `!vc help` | `!vc <lock|unlock|hide|show|limit|name|transfer|permit|reject|kick|pull|claim|info>`";
+"Usage: `!voice help` | `!voice <info|bump|lock|unlock|name|size|bitrate|permit|unpermit|kick|ban|unban|unbanall|reset|claim|transfer>`";
 
 export async function handleVcCommand(message: Message, args: string[]): Promise<void> {
+  const sub = args[0]?.toLowerCase() ?? "help";
+  if (sub === "help" || sub === "usage") {
+    await message.reply("For a private voice command list, use `/voice help`.");
+    return;
+  }
+
   const guild = message.guild;
   const voice = message.member?.voice.channel;
   if (!guild || !voice || voice.type !== ChannelType.GuildVoice || !tempChannels.has(voice.id)) {
-    await message.reply("You must be in a temporary voice channel.");
+    await message.reply("You must be in one of your temporary voice channels. Use `!voice help` to see commands.");
     return;
   }
   const channel: VoiceChannel = voice;
 
-  const sub = args[0]?.toLowerCase() ?? "";
   const ownerId = tempChannels.get(channel.id);
 
   try {
-    if (sub === "help" || sub === "usage") {
-      await message.reply({
-        content:
-          "**Voice channel controls**\n" +
-          "`!vc help` — show this help\n" +
-          "`!vc lock` / `!vc unlock` — lock or unlock the channel\n" +
-          "`!vc hide` / `!vc show` — hide or show the channel\n" +
-          "`!vc limit <0-99>` — set the member limit\n" +
-          "`!vc name <new name>` — rename the channel\n" +
-          "`!vc transfer @user` — pass ownership to another member in the VC\n" +
-          "`!vc permit @user` / `!vc reject @user` — allow or deny access\n" +
-          "`!vc kick @user` / `!vc pull @user` — remove or pull a member into the VC\n" +
-          "`!vc claim` / `!vc info` — claim ownership or view channel info",
-      });
-      return;
-    }
-
     if (sub === "info") {
       const overwrite = channel.permissionOverwrites.cache.get(guild.roles.everyone.id);
       const locked = overwrite?.deny.has(PermissionFlagsBits.Connect) ?? false;
-      const hidden = overwrite?.deny.has(PermissionFlagsBits.ViewChannel) ?? false;
       const embed = new EmbedBuilder()
         .setTitle("Voice Channel Info")
         .addFields(
@@ -458,7 +587,6 @@ export async function handleVcCommand(message: Message, args: string[]): Promise
           { name: "Name", value: channel.name, inline: true },
           { name: "User Limit", value: channel.userLimit === 0 ? "None" : String(channel.userLimit), inline: true },
           { name: "Locked", value: locked ? "Yes" : "No", inline: true },
-          { name: "Hidden", value: hidden ? "Yes" : "No", inline: true },
           { name: "Members", value: String(channel.members.size), inline: true },
         );
       await message.reply({ embeds: [embed] });
@@ -476,9 +604,14 @@ export async function handleVcCommand(message: Message, args: string[]): Promise
       return;
     }
 
+    const normalizedSub = sub === "size" ? "limit" : sub === "rename" ? "name" : sub === "reject" ? "ban" : sub;
     const isOwnerCommand =
       isAccessAction(sub) ||
-      ["limit", "name", "transfer", "owner", "permit", "reject", "kick", "move", "pull"].includes(sub);
+      [
+        "limit", "size", "name", "rename", "bitrate", "bump", "reset",
+        "transfer", "owner", "permit", "unpermit", "reject", "ban", "unban",
+        "unbanall", "kick", "move", "pull",
+      ].includes(sub);
     if (!isOwnerCommand) {
       await message.reply(VC_USAGE);
       return;
@@ -494,19 +627,19 @@ export async function handleVcCommand(message: Message, args: string[]): Promise
       return;
     }
 
-    if (sub === "limit") {
+    if (normalizedSub === "limit") {
       const raw = args[1] ?? "";
       const limit = /^\d+$/.test(raw) ? Number.parseInt(raw, 10) : Number.NaN;
       if (!Number.isInteger(limit) || limit < 0 || limit > 99) {
-        await message.reply("Provide a user limit between 0 and 99 (0 removes the limit).");
+        await message.reply("Provide a member limit between 0 and 99 (0 removes the limit).");
         return;
       }
       await channel.setUserLimit(limit);
-      await message.reply(limit === 0 ? "👥 User limit removed." : `👥 User limit set to ${limit}.`);
+      await message.reply(limit === 0 ? "Member limit removed." : `Member limit set to ${limit}.`);
       return;
     }
 
-    if (sub === "name") {
+    if (normalizedSub === "name") {
       const name = args.slice(1).join(" ").trim().slice(0, 100);
       if (!name) {
         await message.reply("Provide a new channel name.");
@@ -514,6 +647,50 @@ export async function handleVcCommand(message: Message, args: string[]): Promise
       }
       await channel.setName(name, "Join to Create: renamed by owner");
       await message.reply(`✏️ Channel renamed to **${name}**.`);
+      return;
+    }
+
+    if (sub === "bitrate") {
+      const raw = args[1] ?? "";
+      const bitrate = /^\d+$/.test(raw) ? Number.parseInt(raw, 10) : Number.NaN;
+      const maxBitrate = [64, 96, 128, 256][guild.premiumTier] ?? 64;
+      if (!Number.isInteger(bitrate) || bitrate < 8 || bitrate > maxBitrate || bitrate % 8 !== 0) {
+        await message.reply(`Choose a bitrate in 8 kbps steps from 8 to ${maxBitrate} kbps (your server's current maximum).`);
+        return;
+      }
+      await channel.setBitrate(bitrate * 1000);
+      await message.reply(`Voice bitrate set to **${bitrate} kbps**.`);
+      return;
+    }
+
+    if (sub === "bump") {
+      const lastBump = lastBumpAt.get(channel.id) ?? 0;
+      const remaining = BUMP_COOLDOWN_MS - (Date.now() - lastBump);
+      if (remaining > 0) {
+        await message.reply(`This channel can be bumped again <t:${Math.ceil((Date.now() + remaining) / 1000)}:R>.`);
+        return;
+      }
+      await channel.setPosition(0, { reason: "Join to Create: channel bumped by owner" });
+      lastBumpAt.set(channel.id, Date.now());
+      await message.reply("Your public channel has been bumped to the top of its category.");
+      return;
+    }
+
+    if (sub === "reset") {
+      await channel.permissionOverwrites.edit(guild.roles.everyone, {
+        ViewChannel: true,
+        Connect: true,
+      });
+      const memberOverwrites = channel.permissionOverwrites.cache.filter(
+        (overwrite) => overwrite.type === 1 && overwrite.id !== ownerId,
+      );
+      for (const overwrite of memberOverwrites.values()) {
+        await channel.permissionOverwrites.delete(overwrite.id);
+      }
+      await channel.setUserLimit(0);
+      bannedMembersByChannel.delete(channel.id);
+      lastBumpAt.delete(channel.id);
+      await message.reply("Channel reset: it's public, unlocked, and has no member limit or extra access rules.");
       return;
     }
 
@@ -537,10 +714,36 @@ export async function handleVcCommand(message: Message, args: string[]): Promise
       return;
     }
 
-    // Remaining subcommands all target a mentioned member.
-    const target = message.mentions.members?.first();
+    if (sub === "unbanall") {
+      const bannedIds = bannedMembersByChannel.get(channel.id) ?? new Set<string>();
+      for (const userId of bannedIds) {
+        await channel.permissionOverwrites.delete(userId).catch(() => null);
+      }
+      bannedMembersByChannel.delete(channel.id);
+      await message.reply(`Cleared ${bannedIds.size} channel ban${bannedIds.size === 1 ? "" : "s"}.`);
+      return;
+    }
+
+    // Remaining subcommands target a mentioned member or a user ID.
+    const rawTargetId = args[1]?.replace(/^<@!?|>$/g, "");
+    const target =
+      message.mentions.members?.first() ??
+      (rawTargetId ? await guild.members.fetch(rawTargetId).catch(() => null) : null);
+    if (sub === "unban") {
+      if (!rawTargetId) {
+        await message.reply("Mention a member or provide their user ID to unban.");
+        return;
+      }
+      await channel.permissionOverwrites.delete(rawTargetId);
+      const bans = bannedMembersByChannel.get(channel.id);
+      bans?.delete(rawTargetId);
+      if (bans?.size === 0) bannedMembersByChannel.delete(channel.id);
+      await message.reply(`Removed the channel ban for <@${rawTargetId}>.`);
+      return;
+    }
+
     if (!target) {
-      await message.reply(`Mention a member, e.g. \`!vc ${sub} @user\`.`);
+      await message.reply(`Mention a member, e.g. \`!voice ${sub} @user\`.`);
       return;
     }
 
@@ -566,12 +769,18 @@ export async function handleVcCommand(message: Message, args: string[]): Promise
     if (sub === "permit") {
       await channel.permissionOverwrites.edit(target.id, { ViewChannel: true, Connect: true });
       await message.reply(`✅ Permitted <@${target.id}>.`);
-    } else if (sub === "reject") {
+    } else if (sub === "unpermit") {
+      await channel.permissionOverwrites.delete(target.id).catch(() => null);
+      await message.reply(`Removed the custom access rule for <@${target.id}>.`);
+    } else if (normalizedSub === "ban") {
       await channel.permissionOverwrites.edit(target.id, { Connect: false, ViewChannel: false });
       if (target.voice.channelId === channel.id) {
-        await target.voice.disconnect("Join to Create: rejected by owner");
+        await target.voice.disconnect("Join to Create: banned by owner");
       }
-      await message.reply(`⛔ Rejected <@${target.id}>.`);
+      const bans = bannedMembersByChannel.get(channel.id) ?? new Set<string>();
+      bans.add(target.id);
+      bannedMembersByChannel.set(channel.id, bans);
+      await message.reply(`⛔ Banned <@${target.id}> from the channel.`);
     } else if (sub === "kick") {
       if (target.voice.channelId !== channel.id) {
         await message.reply("That member is not in your channel.");
@@ -709,6 +918,110 @@ export async function handleJtcInteraction(
     await handleJtcRenameSubmit(interaction);
   } else if (interaction.isModalSubmit() && interaction.customId === TRANSFER_MODAL_ID) {
     await handleJtcTransferSubmit(interaction);
+  } else if (interaction.isModalSubmit() && interaction.customId.startsWith(VOICE_COMMAND_MODAL_PREFIX)) {
+    await handleVoiceCommandModal(interaction);
+  }
+}
+
+async function handleVoiceCommandModal(interaction: ModalSubmitInteraction): Promise<void> {
+  const guild = interaction.guild;
+  const channel = resolveTempChannel(interaction);
+  const action = interaction.customId.slice(VOICE_COMMAND_MODAL_PREFIX.length);
+  if (!guild || !channel) {
+    await interaction.reply({ content: "This channel is no longer a temporary voice channel.", flags: MessageFlags.Ephemeral });
+    return;
+  }
+  if (tempChannels.get(channel.id) !== interaction.user.id) {
+    await interaction.reply({ content: OWNER_ONLY_MESSAGE, flags: MessageFlags.Ephemeral });
+    return;
+  }
+
+  const value = interaction.fields.getTextInputValue(VOICE_COMMAND_INPUT_ID).trim();
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+  if (action === "size" || action === "bitrate") {
+    const amount = /^\d+$/.test(value) ? Number.parseInt(value, 10) : Number.NaN;
+    if (action === "size") {
+      if (!Number.isInteger(amount) || amount < 0 || amount > 99) {
+        await interaction.editReply("Enter a member limit from 0 to 99 (0 removes it).");
+        return;
+      }
+      await channel.setUserLimit(amount);
+      await interaction.editReply(amount === 0 ? "Member limit removed." : `Member limit set to ${amount}.`);
+      return;
+    }
+
+    const maxBitrate = [64, 96, 128, 256][guild.premiumTier] ?? 64;
+    if (!Number.isInteger(amount) || amount < 8 || amount > maxBitrate || amount % 8 !== 0) {
+      await interaction.editReply(`Choose a bitrate in 8 kbps steps from 8 to ${maxBitrate} kbps.`);
+      return;
+    }
+    await channel.setBitrate(amount * 1000);
+    await interaction.editReply(`Voice bitrate set to **${amount} kbps**.`);
+    return;
+  }
+
+  const targetId = value.replace(/^<@!?|>$/g, "");
+  if (!/^\d{17,20}$/.test(targetId)) {
+    await interaction.editReply("Enter a valid member mention or user ID.");
+    return;
+  }
+  if (action === "unban") {
+    await channel.permissionOverwrites.delete(targetId);
+    const bans = bannedMembersByChannel.get(channel.id);
+    bans?.delete(targetId);
+    if (bans?.size === 0) bannedMembersByChannel.delete(channel.id);
+    await interaction.editReply(`Removed the channel ban for <@${targetId}>.`);
+    return;
+  }
+
+  const target = await guild.members.fetch(targetId).catch(() => null);
+  if (!target) {
+    await interaction.editReply("I couldn't find that member in this server.");
+    return;
+  }
+  if (target.id === interaction.user.id) {
+    await interaction.editReply("You can't use this action on yourself.");
+    return;
+  }
+
+  switch (action) {
+    case "permit":
+      await channel.permissionOverwrites.edit(target.id, { ViewChannel: true, Connect: true });
+      await interaction.editReply(`Permitted <@${target.id}>.`);
+      return;
+    case "unpermit":
+      await channel.permissionOverwrites.delete(target.id).catch(() => null);
+      await interaction.editReply(`Removed the custom access rule for <@${target.id}>.`);
+      return;
+    case "kick":
+    case "ban":
+      if (target.voice.channelId === channel.id) {
+        await target.voice.disconnect(`Join to Create: ${action === "ban" ? "banned" : "kicked"} by owner`);
+      } else if (action === "kick") {
+        await interaction.editReply("That member is not in this voice channel.");
+        return;
+      }
+      if (action === "ban") {
+        await channel.permissionOverwrites.edit(target.id, { Connect: false, ViewChannel: false });
+        const bans = bannedMembersByChannel.get(channel.id) ?? new Set<string>();
+        bans.add(target.id);
+        bannedMembersByChannel.set(channel.id, bans);
+        await interaction.editReply(`Banned <@${target.id}> from this channel.`);
+      } else {
+        await interaction.editReply(`Kicked <@${target.id}> from this channel.`);
+      }
+      return;
+    case "pull":
+      if (!target.voice.channel) {
+        await interaction.editReply("That member is not connected to a voice channel.");
+        return;
+      }
+      await target.voice.setChannel(channel, "Join to Create: pulled by owner");
+      await interaction.editReply(`Pulled <@${target.id}> into this channel.`);
+      return;
+    default:
+      await interaction.editReply("Unknown voice-channel command.");
   }
 }
 

@@ -14,6 +14,7 @@ import { logger } from "../lib/logger";
 import { SOCIAL_ACTION_NAMES, SOCIAL_ACTIONS } from "./social";
 import { bumpStickyForChannel } from "./automation";
 import { premiumEmbed } from "./presentation";
+import { VC_HELP_TEXT } from "./joinToCreate";
 
 const slashCommands = [
   new SlashCommandBuilder()
@@ -116,6 +117,10 @@ const slashCommands = [
     .addSubcommand((sub) =>
       sub.setName("remove").setDescription("Allow everyone to use social commands again."),
     ),
+  new SlashCommandBuilder()
+    .setName("voice")
+    .setDescription("Manage your Join to Create voice channel.")
+    .addSubcommand((sub) => sub.setName("help").setDescription("Show custom voice channel commands.")),
   new SlashCommandBuilder()
     .setName("setmodlog")
     .setDescription("Set the moderation log channel.")
@@ -342,6 +347,8 @@ function buildLegacyContent(interaction: ChatInputCommandInteraction): string {
       const role = interaction.options.getRole("role");
       return role ? `!socialrole set <@&${role.id}>` : "!socialrole status";
     }
+    case "voice":
+      return `!voice ${interaction.options.getSubcommand(false) ?? "help"}`;
     case "setmodlog": {
       const channel = interaction.options.getChannel("channel");
       return channel ? `!setmodlog <#${channel.id}>` : "!setmodlog";
@@ -466,6 +473,11 @@ export async function handleSlashCommand(client: Client, interaction: ChatInputC
   }
 
   try {
+    if (interaction.commandName === "voice") {
+      await interaction.reply({ content: VC_HELP_TEXT, ephemeral: true });
+      return;
+    }
+
     if (Object.hasOwn(SOCIAL_ACTIONS, interaction.commandName) || interaction.commandName === "ship") {
       await interaction.deferReply();
     }
