@@ -455,6 +455,75 @@ function buildScoreCard(actionName: SocialActionName, targetName: string, target
     .setTimestamp();
 }
 
+function auraMood(score: number): { color: number; title: string; reading: string; gifCategory: string } {
+  if (score >= 750) {
+    return {
+      color: 0xf1c40f,
+      title: "LEGENDARY AURA",
+      reading: "Unstoppable main-character energy. The room changes when you arrive.",
+      gifCategory: "smug",
+    };
+  }
+  if (score >= 250) {
+    return {
+      color: 0x9b59b6,
+      title: "RADIANT AURA",
+      reading: "Your energy is glowing today. Keep being iconic.",
+      gifCategory: "happy",
+    };
+  }
+  if (score >= 0) {
+    return {
+      color: 0x2ecc71,
+      title: "GOOD VIBRATIONS",
+      reading: "Aura is looking good. You're bringing positive energy.",
+      gifCategory: "smile",
+    };
+  }
+  if (score >= -500) {
+    return {
+      color: 0x3498db,
+      title: "MYSTERIOUS ENERGY",
+      reading: "A quiet, mysterious aura today. Your comeback arc is loading.",
+      gifCategory: "think",
+    };
+  }
+  return {
+    color: 0x5865f2,
+    title: "AURA RECHARGE",
+    reading: "Even legends need a recharge. Take it easy; tomorrow is a fresh scan.",
+    gifCategory: "cry",
+  };
+}
+
+function buildAuraCard(
+  targetName: string,
+  score: number,
+  avatarUrl: string,
+  gifUrl?: string,
+): EmbedBuilder {
+  const mood = auraMood(score);
+  const filledBlocks = Math.round(((score + 1000) / 2000) * 14);
+  const meter = `${"▰".repeat(filledBlocks)}${"▱".repeat(14 - filledBlocks)}`;
+  const embed = new EmbedBuilder()
+    .setColor(mood.color)
+    .setAuthor({ name: `${targetName}'s daily aura`, iconURL: avatarUrl })
+    .setTitle(`✨ ${mood.title} ✨`)
+    .setDescription(`## ${score >= 0 ? "+" : ""}${score.toLocaleString()} AURA\n${mood.reading}`)
+    .addFields(
+      { name: "AURA METER", value: meter },
+      { name: "SCAN", value: "Daily reading • Just for fun", inline: true },
+      { name: "SUBJECT", value: targetName, inline: true },
+    )
+    .setThumbnail(avatarUrl)
+    .setFooter({ text: "Your aura refreshes every day." })
+    .setTimestamp();
+
+  if (gifUrl) embed.setImage(gifUrl);
+
+  return embed;
+}
+
 function safeDisplayName(name: string): string {
   return name.replace(/@/g, "@\u200b");
 }
@@ -638,11 +707,28 @@ export async function handleSocialAction(message: Message, actionName: SocialAct
 
   const action = SOCIAL_ACTIONS[actionName];
   if (SCORE_ACTIONS.has(actionName)) {
+    const avatarUrl = target.user.displayAvatarURL({ size: 256 });
+    if (actionName === "aura") {
+      const score = dailyScore("aura", target.id, -1000, 1000);
+      const mood = auraMood(score);
+      const gif = await fetchAnimeGif(mood.gifCategory);
+      await message.reply({
+        embeds: [buildAuraCard(
+          safeDisplayName(target.displayName),
+          score,
+          avatarUrl,
+          gif?.url,
+        )],
+        allowedMentions: { parse: [], repliedUser: false },
+      });
+      return;
+    }
+
     const embed = buildScoreCard(
       actionName,
       safeDisplayName(target.displayName),
       target.id,
-      target.user.displayAvatarURL({ size: 256 }),
+      avatarUrl,
     );
     await message.reply({
       embeds: [embed],

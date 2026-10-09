@@ -23,6 +23,8 @@ interface AutomodConfig {
   links: boolean;
   mentionLimit: number;
   blacklist: string[];
+  blockedDomains: string[];
+  allowedDomains: string[];
 }
 
 const DEFAULT_AUTOMOD: AutomodConfig = {
@@ -30,6 +32,8 @@ const DEFAULT_AUTOMOD: AutomodConfig = {
   links: true,
   mentionLimit: 5,
   blacklist: ["discord.gg", "freenitro", "nitrofree", "free nitro"],
+  blockedDomains: [],
+  allowedDomains: [],
 };
 
 const automodConfig = new Map<string, AutomodConfig>();
@@ -53,7 +57,10 @@ function saveAutomodConfig(data: Record<string, AutomodConfig>): void {
 }
 
 function getAutomodConfig(guildId: string): AutomodConfig {
-  const saved = automodConfig.get(guildId) ?? loadAutomodConfig()[guildId] ?? DEFAULT_AUTOMOD;
+  const savedConfig = automodConfig.get(guildId) ?? loadAutomodConfig()[guildId];
+  const saved = savedConfig
+    ? { ...DEFAULT_AUTOMOD, ...savedConfig }
+    : DEFAULT_AUTOMOD;
   automodConfig.set(guildId, saved);
   return saved;
 }
@@ -67,6 +74,41 @@ function persistAutomodConfig(guildId: string, config: AutomodConfig): void {
 
 function sanitizeWord(word: string): string {
   return word.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function formatAutomodList(values: string[]): string {
+  const formatted = values.join(", ") || "None";
+  return formatted.length > 1_000 ? `${formatted.slice(0, 997)}...` : formatted;
+}
+
+function sanitizeDomain(value: string): string | null {
+  const input = value.trim().toLowerCase();
+  if (!input) return null;
+
+  try {
+    const url = new URL(input.includes("://") ? input : `https://${input}`);
+    const hostname = url.hostname.replace(/^www\./, "").replace(/\.$/, "");
+    if (!hostname.includes(".") || hostname.includes(" ")) return null;
+    return hostname;
+  } catch {
+    return null;
+  }
+}
+
+function domainMatches(hostname: string, domain: string): boolean {
+  return hostname === domain || hostname.endsWith(`.${domain}`);
+}
+
+function getLinkHosts(content: string): string[] {
+  const matches = content.match(/(?:https?:\/\/|www\.)[^\s<>]+/gi) ?? [];
+  return matches.flatMap((match) => {
+    try {
+      const url = new URL(match.startsWith("www.") ? `https://${match}` : match);
+      return [url.hostname.toLowerCase().replace(/\.$/, "")];
+    } catch {
+      return [];
+    }
+  });
 }
 
 function escapeReason(value: string): string {
@@ -398,9 +440,23 @@ export async function handleAutoModeration(message: Message): Promise<boolean> {
     }
   }
 
-  if (guildConfig.links) {
-    const urlPattern = /(https?:\/\/|www\.)\S+/i;
-    if (urlPattern.test(message.content) && !message.content.includes("https://discord.com/channels")) {
+  const hosts = getLinkHosts(message.content);
+  if (hosts.some((host) =>
+    guildConfig.blockedDomains.some((domain) => domainMatches(host, domain)),
+  )) {
+    await applyAutomodAction(message, "Blocked link domain detected.");
+    return true;
+  }
+
+  if (
+    guildConfig.links &&
+    /(https?:\/\/|www\.)\S+/i.test(message.content) &&
+    !message.content.includes("https://discord.com/channels")
+  ) {
+    const hasDisallowedLink = hosts.length === 0 || hosts.some((host) =>
+      !guildConfig.allowedDomains.some((domain) => domainMatches(host, domain)),
+    );
+    if (hasDisallowedLink) {
       await applyAutomodAction(message, "External links are not allowed.");
       return true;
     }
@@ -445,8 +501,12 @@ export async function handleAutomodCommand(message: Message): Promise<void> {
             `Invites: ${config.invites ? "On" : "Off"}`,
             `Links: ${config.links ? "On" : "Off"}`,
             `Mention limit: ${config.mentionLimit}`,
-            `Blocked words: ${config.blacklist.length > 0 ? config.blacklist.join(", ") : "None"}`,
-          ].join("\n")),
+            `Blocked words: ${formatAutomodList(config.blacklist)}`,
+          ].join("\n"))
+          .addFields(
+            { name: "Blocked link domains", value: formatAutomodList(config.blockedDomains) },
+            { name: "Allowed link domains", value: formatAutomodList(config.allowedDomains) },
+          ),
       ],
     });
     return;
@@ -524,6 +584,44 @@ export async function handleAutomodCommand(message: Message): Promise<void> {
     return;
   }
 
+  const domainRuleCommands: Record<string, { key: "blockedDomains" | "allowedDomains"; add: boolean }> = {
+    blocklink: { key: "blockedDomains", add: true },
+    blockdomain: { key: "blockedDomains", add: true },
+    unblocklink: { key: "blockedDomains", add: false },
+    unblockdomain: { key: "blockedDomains", add: false },
+    allowlink: { key: "allowedDomains", add: true },
+    allowdomain: { key: "allowedDomains", add: true },
+    unallowlink: { key: "allowedDomains", add: false },
+    unallowdomain: { key: "allowedDomains", add: false },
+  };
+  const domainRule = domainRuleCommands[sub];
+  if (domainRule) {
+    const rawDomain = args.slice(1).join(" ");
+    const domain = sanitizeDomain(rawDomain);
+    if (!domain) {
+      await message.reply({
+        embeds: [new EmbedBuilder().setColor(C).setDescription(
+          `❌ Usage: \`!automod ${sub} <domain>\` (for example, \`example.com\`).`,
+        )],
+      });
+      return;
+    }
+
+    const domains = config[domainRule.key];
+    const nextDomains = domainRule.add
+      ? [...new Set([...domains, domain])].sort()
+      : domains.filter((entry) => entry !== domain);
+    persistAutomodConfig(message.guild.id, { ...config, [domainRule.key]: nextDomains });
+    await message.reply({
+      embeds: [new EmbedBuilder().setColor(C).setDescription(
+        domainRule.add
+          ? `✅ ${domainRule.key === "blockedDomains" ? "Blocked" : "Allowed"} links from **${domain}** (including its subdomains).`
+          : `✅ Removed **${domain}** from the ${domainRule.key === "blockedDomains" ? "blocked" : "allowed"} domain list.`,
+      )],
+    });
+    return;
+  }
+
   await message.reply({
     embeds: [
       new EmbedBuilder()
@@ -535,7 +633,9 @@ export async function handleAutomodCommand(message: Message): Promise<void> {
           "`!automod set links on|off` — block external links\n" +
           "`!automod set mentions <0-20>` — max mentions per message\n" +
           "`!automod add <word>` — block a word\n" +
-          "`!automod remove <word>` — remove a blocked word",
+          "`!automod remove <word>` — remove a blocked word\n" +
+          "`!automod blocklink <domain>` / `unblocklink <domain>` — block or unblock a domain\n" +
+          "`!automod allowlink <domain>` / `unallowlink <domain>` — allow or remove a domain from the link-filter allowlist",
         ),
     ],
   });

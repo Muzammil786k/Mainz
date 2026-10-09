@@ -66,7 +66,7 @@ function page2(): EmbedBuilder {
       { name: "`!hide [#channel]` / `!unhide [#channel]`", value: "Hide a channel from @everyone or make it visible again. Use `!unhide #channel` from another channel if hiding it removes your access.\n*(Manage Channels)*" },
       { name: "`!purge <amount>` • `/purge`", value: "Delete 1–100 recent messages.\n*(Manage Messages)*" },
       { name: "`!pb [amount]` • `/pb`", value: "Delete recent bot messages.\n*(Manage Messages)*" },
-      { name: "`!automod status`", value: "View filters; configure invites, links, or mentions. Manage words with `!automod add|block <word>` and `!automod remove|unblock <word>`.\n*(Manage Server)*" },
+      { name: "`!automod status`", value: "View filters and domain lists. Configure with `!automod set links on|off`; add/remove words with `!automod add|remove <word>`, and domains with `!automod blocklink|unblocklink <domain>` or `!automod allowlink|unallowlink <domain>`. Allowed domains bypass the global link filter; blocked domains are always blocked.\n*(Manage Server)*" },
     )
     .setFooter({ text: HELP_FOOTER });
 }
