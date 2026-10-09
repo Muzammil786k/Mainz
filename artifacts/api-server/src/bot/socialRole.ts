@@ -1,4 +1,4 @@
-import { PermissionFlagsBits, type Message } from "discord.js";
+import { PermissionFlagsBits, type GuildMember, type Message } from "discord.js";
 import { eq } from "drizzle-orm";
 import { db, botSocialRoleGateTable } from "@workspace/db";
 import { logger } from "../lib/logger";
@@ -24,6 +24,15 @@ async function getRequiredRoleId(guildId: string): Promise<string | null | undef
     logger.error({ err, guildId }, "Failed to load social role requirement");
     return undefined;
   }
+}
+
+export async function canUseSocialCommandsForMember(
+  guildId: string,
+  member: GuildMember,
+): Promise<boolean | undefined> {
+  const requiredRoleId = await getRequiredRoleId(guildId);
+  if (requiredRoleId === undefined) return undefined;
+  return !requiredRoleId || member.roles.cache.has(requiredRoleId);
 }
 
 export async function canUseSocialCommands(message: Message): Promise<boolean> {

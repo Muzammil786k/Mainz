@@ -9,7 +9,7 @@ import {
 } from "discord.js";
 import { logger } from "../lib/logger";
 import { renderShipImage } from "./shipImage";
-import { canUseSocialCommands } from "./socialRole";
+import { canUseSocialCommands, canUseSocialCommandsForMember } from "./socialRole";
 
 interface SocialAction {
   description: string;
@@ -728,6 +728,22 @@ export async function handleSocialBackButton(interaction: ButtonInteraction): Pr
       ]);
       if (!clicker || !original) {
         await interaction.reply({ content: "❌ I couldn’t find both members in this server.", ephemeral: true });
+        return;
+      }
+
+      const canUseSocialCommands = await canUseSocialCommandsForMember(guild.id, clicker);
+      if (canUseSocialCommands === undefined) {
+        await interaction.reply({
+          content: "❌ I couldn't verify the social-command role requirement. Please try again shortly.",
+          ephemeral: true,
+        });
+        return;
+      }
+      if (!canUseSocialCommands) {
+        await interaction.reply({
+          content: "❌ You need the required social-command role to use this button.",
+          ephemeral: true,
+        });
         return;
       }
 
