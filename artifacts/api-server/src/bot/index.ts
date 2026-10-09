@@ -9,6 +9,7 @@ import { handleMessage } from "./commands";
 import { handleSlashCommand, registerSlashCommands } from "./slash";
 import { handleSocialBackButton } from "./social";
 import { giveaways, buildGiveawayEmbed } from "./giveaway";
+import { handleVoiceStateUpdate } from "./joincreate";
 import { logger } from "../lib/logger";
 import { processUserMessageAutomations, sendMemberMessage } from "./automation";
 
@@ -27,6 +28,7 @@ export function createBot(): Client {
       GatewayIntentBits.GuildMembers,
       GatewayIntentBits.GuildPresences,
       GatewayIntentBits.GuildMessageReactions,
+      GatewayIntentBits.GuildVoiceStates,
     ],
     partials: [Partials.Message, Partials.Channel, Partials.Reaction],
   });
@@ -63,6 +65,12 @@ export function createBot(): Client {
     void sendMemberMessage(client, member, "goodbye").catch((err) => {
       logger.error({ err, guildId: member.guild.id }, "Could not send goodbye message");
     });
+  });
+
+  client.on("voiceStateUpdate", (oldState, newState) => {
+    void handleVoiceStateUpdate(client, oldState, newState).catch((err) =>
+      logger.error({ err }, "JTC voice state error"),
+    );
   });
 
   client.on("interactionCreate", async (interaction) => {

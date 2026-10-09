@@ -93,6 +93,7 @@ function page4(): EmbedBuilder {
       { name: "`!channelinfo` • `/channelinfo`", value: "Show current channel ID, type, category, and creation time." },
       { name: "`!avatar [@user]` • `/avatar`", value: "Show a member's avatar in high resolution." },
       { name: "`!steal` (reply to an emoji or sticker)", value: "Choose to add an emoji or PNG/APNG/GIF sticker from the replied-to message as a server emoji or sticker. Lottie stickers are converted to a still image. Requires **Create Expressions** permission and an available slot." },
+      { name: "`!jtc setup` • `!jtc disable`", value: "Create a Join to Create lobby voice channel. Members who join it get their own temporary voice channel, deleted when empty.\n*(Manage Server or Manage Channels)*" },
     )
     .setFooter({ text: HELP_FOOTER });
 }

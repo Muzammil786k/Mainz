@@ -28,6 +28,7 @@ import {
 import { handleSetModlog, handleCaseLookup, handleCaseList } from "./cases";
 import { handleShip, handleSocialAction, SOCIAL_ACTIONS, type SocialActionName } from "./social";
 import { handleSteal } from "./steal";
+import { handleJtc } from "./joincreate";
 import {
   handleAutoReactCommand,
   handleGoodbyeCommand,
@@ -148,6 +149,8 @@ export async function handleMessage(client: Client, incomingMessage: Message): P
     await handleShip(message);
   } else if (lower === "!steal" || lower.startsWith("!steal ")) {
     await handleSteal(message);
+  } else if (lower === "!jtc" || lower.startsWith("!jtc ")) {
+    await handleJtc(message);
   } else {
     const command = lower.match(/^!([a-z]+)(?:\s|$)/)?.[1] as SocialActionName | undefined;
     if (command && Object.hasOwn(SOCIAL_ACTIONS, command)) {
