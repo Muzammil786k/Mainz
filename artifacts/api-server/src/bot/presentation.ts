@@ -7,16 +7,12 @@ import {
 } from "discord.js";
 
 const FOOTER_TEXT = "Use /help to see all commands";
-const BRAND_COLOR = 0x5865f2;
-const SUCCESS_COLOR = 0x57f287;
-const WARNING_COLOR = 0xfee75c;
-const ERROR_COLOR = 0xed4245;
+const BRAND_COLOR = 0x2b2d31;
+const SUCCESS_COLOR = BRAND_COLOR;
+const WARNING_COLOR = BRAND_COLOR;
+const ERROR_COLOR = BRAND_COLOR;
 
-function responseColor(text: string): number {
-  const trimmed = text.trimStart();
-  if (/^(?:❌|⛔|🚫)/u.test(trimmed)) return ERROR_COLOR;
-  if (/^(?:⚠️|⚠|🟡)/u.test(trimmed)) return WARNING_COLOR;
-  if (/^(?:✅|🎉|🟢)/u.test(trimmed)) return SUCCESS_COLOR;
+function responseColor(_text: string): number {
   return BRAND_COLOR;
 }
 
@@ -30,9 +26,7 @@ function asApiEmbed(value: unknown): APIEmbed {
 
 function brandEmbed(value: unknown, user: ClientUser | null, fallbackText: string): EmbedBuilder {
   const data = asApiEmbed(value);
-  const embed = EmbedBuilder.from(data).setColor(
-    responseColor(`${fallbackText}\n${data.description ?? ""}`),
-  );
+  const embed = EmbedBuilder.from(data).setColor(BRAND_COLOR);
 
   const existingFooter = data.footer?.text?.trim();
   const footerText = existingFooter || FOOTER_TEXT;
@@ -65,7 +59,7 @@ function styleReplyPayload(
   if (content.trim()) {
     const iconURL = user?.displayAvatarURL({ size: 64 });
     const embed = new EmbedBuilder()
-      .setColor(responseColor(content))
+      .setColor(BRAND_COLOR)
       .setDescription(content.slice(0, 4096))
       .setFooter(iconURL ? { text: FOOTER_TEXT, iconURL } : { text: FOOTER_TEXT });
     if (clearExistingContent) {
@@ -122,7 +116,7 @@ export function premiumEmbed(
 ): EmbedBuilder {
   const iconURL = user?.displayAvatarURL({ size: 64 });
   const embed = new EmbedBuilder()
-    .setColor(options.color ?? responseColor(description))
+    .setColor(BRAND_COLOR)
     .setDescription(description.slice(0, 4096))
     .setFooter(iconURL ? { text: FOOTER_TEXT, iconURL } : { text: FOOTER_TEXT })
     .setTimestamp();

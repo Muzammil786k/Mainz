@@ -9,10 +9,101 @@ import {
   type TextChannel,
   type Client,
 } from "discord.js";
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
+import { join } from "path";
 import { logCase } from "./cases";
 import { premiumEmbed, premiumMessagePayload } from "./presentation";
 
-const C = 0xff0000;
+const C = 0x2b2d31;
+const DATA_DIR = join(process.cwd(), "data");
+const AUTOMOD_FILE = join(DATA_DIR, "automod.json");
+
+interface AutomodConfig {
+  invites: boolean;
+  links: boolean;
+  mentionLimit: number;
+  blacklist: string[];
+}
+
+const DEFAULT_AUTOMOD: AutomodConfig = {
+  invites: true,
+  links: true,
+  mentionLimit: 5,
+  blacklist: ["discord.gg", "freenitro", "nitrofree", "free nitro"],
+};
+
+const automodConfig = new Map<string, AutomodConfig>();
+
+function ensureAutomodDir(): void {
+  if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
+}
+
+function loadAutomodConfig(): Record<string, AutomodConfig> {
+  try {
+    if (!existsSync(AUTOMOD_FILE)) return {};
+    return JSON.parse(readFileSync(AUTOMOD_FILE, "utf-8")) as Record<string, AutomodConfig>;
+  } catch {
+    return {};
+  }
+}
+
+function saveAutomodConfig(data: Record<string, AutomodConfig>): void {
+  ensureAutomodDir();
+  writeFileSync(AUTOMOD_FILE, JSON.stringify(data, null, 2));
+}
+
+function getAutomodConfig(guildId: string): AutomodConfig {
+  const saved = automodConfig.get(guildId) ?? loadAutomodConfig()[guildId] ?? DEFAULT_AUTOMOD;
+  automodConfig.set(guildId, saved);
+  return saved;
+}
+
+function persistAutomodConfig(guildId: string, config: AutomodConfig): void {
+  const store = loadAutomodConfig();
+  store[guildId] = config;
+  automodConfig.set(guildId, config);
+  saveAutomodConfig(store);
+}
+
+function sanitizeWord(word: string): string {
+  return word.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function escapeReason(value: string): string {
+  return value.replace(/[`*_~]/g, "");
+}
+
+async function applyAutomodAction(message: Message, reason: string): Promise<void> {
+  if (!message.guild) return;
+  if (message.member?.permissions.has(PermissionFlagsBits.ManageGuild) || message.member?.permissions.has(PermissionFlagsBits.Administrator)) {
+    return;
+  }
+
+  await message.delete().catch(() => {});
+
+  const botId = message.client.user?.id ?? "bot";
+  await logCase(message.client, {
+    type: "WARN",
+    guildId: message.guild.id,
+    targetId: message.author.id,
+    targetTag: message.author.tag,
+    moderatorId: botId,
+    reason,
+  });
+
+  try {
+    await message.author.send({
+      embeds: [
+        new EmbedBuilder()
+          .setColor(C)
+          .setTitle(`⚠️ Warning in ${message.guild.name}`)
+          .setDescription(`Your message was removed for: **${escapeReason(reason)}**`),
+      ],
+    });
+  } catch {
+    // DMs closed
+  }
+}
 
 // ─── Kick ──────────────────────────────────────────────────────────────────────
 
@@ -233,4 +324,219 @@ export async function handleUnlock(message: Message): Promise<void> {
   } catch {
     await message.reply({ embeds: [new EmbedBuilder().setColor(C).setDescription("❌ Failed to unlock channel.")] });
   }
+}
+
+async function handleChannelVisibility(message: Message, hidden: boolean, args: string[]): Promise<void> {
+  const guild = message.guild;
+  if (!guild) return;
+
+  const member = message.member ?? await guild.members.fetch(message.author.id).catch(() => null);
+  if (!member?.permissions.has(PermissionFlagsBits.ManageChannels)) {
+    await message.reply({ embeds: [new EmbedBuilder().setColor(C).setDescription("❌ You need **Manage Channels** permission.")] });
+    return;
+  }
+
+  const channelToken = args[0] ?? "";
+  const channelId = /^<#(\d{17,20})>$/.exec(channelToken)?.[1] ?? (/^\d{17,20}$/.test(channelToken) ? channelToken : null);
+  if (channelToken && !channelId && !message.mentions.channels.first()) {
+    await message.reply("Usage: `!hide [#channel]` or `!unhide [#channel]`.");
+    return;
+  }
+  const channel = channelId
+    ? await guild.channels.fetch(channelId).catch(() => null)
+    : message.mentions.channels.first() ?? message.channel;
+  if (!channel || !("guildId" in channel) || channel.guildId !== guild.id) {
+    await message.reply({ embeds: [new EmbedBuilder().setColor(C).setDescription("❌ I couldn't find that channel in this server.")] });
+    return;
+  }
+
+  if (!("permissionOverwrites" in channel)) {
+    await message.reply({ embeds: [new EmbedBuilder().setColor(C).setDescription("❌ This channel's visibility cannot be changed here.")] });
+    return;
+  }
+
+  try {
+    await channel.permissionOverwrites.edit(guild.roles.everyone, {
+      ViewChannel: hidden ? false : null,
+    });
+  } catch {
+    await message.reply({ embeds: [new EmbedBuilder().setColor(C).setDescription("❌ Failed to change this channel's visibility.")] });
+    return;
+  }
+
+  const description = hidden
+    ? `🙈 <#${channel.id}> is hidden from @everyone. Staff with access can still view it.`
+    : `👁️ <#${channel.id}> is visible to @everyone again.`;
+  await message.reply({ embeds: [new EmbedBuilder().setColor(C).setDescription(description)] })
+    .catch(() => message.author.send(description).catch(() => {}));
+}
+
+export async function handleHide(message: Message, args: string[]): Promise<void> {
+  await handleChannelVisibility(message, true, args);
+}
+
+export async function handleUnhide(message: Message, args: string[]): Promise<void> {
+  await handleChannelVisibility(message, false, args);
+}
+
+export async function handleAutoModeration(message: Message): Promise<boolean> {
+  if (!message.guild || message.author.bot || !message.content.trim()) return false;
+  const guildConfig = getAutomodConfig(message.guild.id);
+
+  const member = message.member;
+  if (member?.permissions.has(PermissionFlagsBits.ManageGuild) || member?.permissions.has(PermissionFlagsBits.Administrator)) {
+    return false;
+  }
+
+  const content = message.content.toLowerCase();
+
+  if (guildConfig.invites) {
+    const invitePattern = /(discord(?:app)?\.(?:gg|com\/invite|me)|discord\.gift|discord\.gg)/i;
+    if (invitePattern.test(message.content)) {
+      await applyAutomodAction(message, "Discord invite link detected.");
+      return true;
+    }
+  }
+
+  if (guildConfig.links) {
+    const urlPattern = /(https?:\/\/|www\.)\S+/i;
+    if (urlPattern.test(message.content) && !message.content.includes("https://discord.com/channels")) {
+      await applyAutomodAction(message, "External links are not allowed.");
+      return true;
+    }
+  }
+
+  if (guildConfig.mentionLimit > 0 && message.mentions.users.size > guildConfig.mentionLimit) {
+    await applyAutomodAction(message, `Mention limit exceeded (${guildConfig.mentionLimit}).`);
+    return true;
+  }
+
+  for (const blockedWord of guildConfig.blacklist) {
+    const word = sanitizeWord(blockedWord);
+    if (!word) continue;
+    if (content.includes(word)) {
+      await applyAutomodAction(message, `Blocked word detected: ${blockedWord}`);
+      return true;
+    }
+  }
+
+  return false;
+}
+
+export async function handleAutomodCommand(message: Message): Promise<void> {
+  if (!message.guild) return;
+  const member = message.guild.members.cache.get(message.author.id);
+  if (!member?.permissions.has(PermissionFlagsBits.ManageGuild) && !member?.permissions.has(PermissionFlagsBits.Administrator)) {
+    await message.reply({ embeds: [new EmbedBuilder().setColor(C).setDescription("❌ You need **Manage Server** permission.")] });
+    return;
+  }
+
+  const args = message.content.trim().split(/\s+/).slice(1);
+  const sub = args[0]?.toLowerCase() ?? "status";
+  const config = getAutomodConfig(message.guild.id);
+
+  if (sub === "status") {
+    await message.reply({
+      embeds: [
+        new EmbedBuilder()
+          .setColor(C)
+          .setTitle("Auto moderation")
+          .setDescription([
+            `Invites: ${config.invites ? "On" : "Off"}`,
+            `Links: ${config.links ? "On" : "Off"}`,
+            `Mention limit: ${config.mentionLimit}`,
+            `Blocked words: ${config.blacklist.length > 0 ? config.blacklist.join(", ") : "None"}`,
+          ].join("\n")),
+      ],
+    });
+    return;
+  }
+
+  if (sub === "set") {
+    const setting = args[1]?.toLowerCase();
+    const value = args[2]?.toLowerCase();
+
+    if (setting === "invites") {
+      if (value !== "on" && value !== "off") {
+        await message.reply({ embeds: [new EmbedBuilder().setColor(C).setDescription("❌ Usage: `!automod set invites on|off`")] });
+        return;
+      }
+      const next = { ...config, invites: value === "on" };
+      persistAutomodConfig(message.guild.id, next);
+      await message.reply({ embeds: [new EmbedBuilder().setColor(C).setDescription(`✅ Invite filtering is now **${value.toUpperCase()}**.`)] });
+      return;
+    }
+
+    if (setting === "links") {
+      if (value !== "on" && value !== "off") {
+        await message.reply({ embeds: [new EmbedBuilder().setColor(C).setDescription("❌ Usage: `!automod set links on|off`")] });
+        return;
+      }
+      const next = { ...config, links: value === "on" };
+      persistAutomodConfig(message.guild.id, next);
+      await message.reply({ embeds: [new EmbedBuilder().setColor(C).setDescription(`✅ Link filtering is now **${value.toUpperCase()}**.`)] });
+      return;
+    }
+
+    if (setting === "mentions") {
+      const limit = Number.parseInt(value ?? "", 10);
+      if (!Number.isInteger(limit) || limit < 0 || limit > 20) {
+        await message.reply({ embeds: [new EmbedBuilder().setColor(C).setDescription("❌ Usage: `!automod set mentions <0-20>`")] });
+        return;
+      }
+      const next = { ...config, mentionLimit: limit };
+      persistAutomodConfig(message.guild.id, next);
+      await message.reply({ embeds: [new EmbedBuilder().setColor(C).setDescription(`✅ Mention limit set to **${limit}**.`)] });
+      return;
+    }
+
+    await message.reply({ embeds: [new EmbedBuilder().setColor(C).setDescription("❌ Usage: `!automod set invites|links|mentions <value>`")] });
+    return;
+  }
+
+  if (sub === "add" || sub === "block" || sub === "blacklist") {
+    const word = args.slice(1).join(" ").trim();
+    if (!word) {
+      await message.reply({ embeds: [new EmbedBuilder().setColor(C).setDescription("❌ Usage: `!automod add <word>`")] });
+      return;
+    }
+    const clean = sanitizeWord(word);
+    if (!clean) {
+      await message.reply({ embeds: [new EmbedBuilder().setColor(C).setDescription("❌ That word is invalid.")] });
+      return;
+    }
+    const next = { ...config, blacklist: [...new Set([...config.blacklist, clean])].sort() };
+    persistAutomodConfig(message.guild.id, next);
+    await message.reply({ embeds: [new EmbedBuilder().setColor(C).setDescription(`✅ Added blocked word: **${clean}**.`)] });
+    return;
+  }
+
+  if (sub === "remove" || sub === "unblock") {
+    const word = args.slice(1).join(" ").trim();
+    if (!word) {
+      await message.reply({ embeds: [new EmbedBuilder().setColor(C).setDescription("❌ Usage: `!automod remove <word>`")] });
+      return;
+    }
+    const clean = sanitizeWord(word);
+    const next = { ...config, blacklist: config.blacklist.filter((entry) => entry !== clean) };
+    persistAutomodConfig(message.guild.id, next);
+    await message.reply({ embeds: [new EmbedBuilder().setColor(C).setDescription(`✅ Removed blocked word: **${clean}**.`)] });
+    return;
+  }
+
+  await message.reply({
+    embeds: [
+      new EmbedBuilder()
+        .setColor(C)
+        .setDescription(
+          "**Auto moderation**\n" +
+          "`!automod status` — view current rules\n" +
+          "`!automod set invites on|off` — block Discord invite links\n" +
+          "`!automod set links on|off` — block external links\n" +
+          "`!automod set mentions <0-20>` — max mentions per message\n" +
+          "`!automod add <word>` — block a word\n" +
+          "`!automod remove <word>` — remove a blocked word",
+        ),
+    ],
+  });
 }

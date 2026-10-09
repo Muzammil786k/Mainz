@@ -102,6 +102,21 @@ const slashCommands = [
     .addRoleOption((o) => o.setName("role").setDescription("Role allowed to omit !"))
     .addBooleanOption((o) => o.setName("remove").setDescription("Remove the current no-prefix role")),
   new SlashCommandBuilder()
+    .setName("socialrole")
+    .setDescription("Set the role required to use social commands.")
+    .addSubcommand((sub) =>
+      sub
+        .setName("set")
+        .setDescription("Require a role for social commands.")
+        .addRoleOption((o) => o.setName("role").setDescription("Required role, such as Level 50").setRequired(true)),
+    )
+    .addSubcommand((sub) =>
+      sub.setName("status").setDescription("Show the current social-command role requirement."),
+    )
+    .addSubcommand((sub) =>
+      sub.setName("remove").setDescription("Allow everyone to use social commands again."),
+    ),
+  new SlashCommandBuilder()
     .setName("setmodlog")
     .setDescription("Set the moderation log channel.")
     .addChannelOption((o) => o.setName("channel").setDescription("Moderation log channel").addChannelTypes(ChannelType.GuildText).setRequired(true)),
@@ -321,6 +336,12 @@ function buildLegacyContent(interaction: ChatInputCommandInteraction): string {
       const role = interaction.options.getRole("role");
       return role ? `!noprefix <@&${role.id}>` : "!noprefix";
     }
+    case "socialrole": {
+      const action = interaction.options.getSubcommand(false) ?? "status";
+      if (action !== "set") return `!socialrole ${action}`;
+      const role = interaction.options.getRole("role");
+      return role ? `!socialrole set <@&${role.id}>` : "!socialrole status";
+    }
     case "setmodlog": {
       const channel = interaction.options.getChannel("channel");
       return channel ? `!setmodlog <#${channel.id}>` : "!setmodlog";
@@ -451,7 +472,7 @@ export async function handleSlashCommand(client: Client, interaction: ChatInputC
 
     const content = buildLegacyContent(interaction);
     const message = createMessageAdapter(interaction, content);
-    await handleMessage(client, message);
+    await handleMessage(client, message, { skipAutoModeration: true });
     await bumpStickyForChannel(client, interaction.guild.id, interaction.channelId);
   } catch (err) {
     logger.error({ err, command: interaction.commandName }, "Error handling slash command");

@@ -10,6 +10,7 @@ import { handleSlashCommand, registerSlashCommands } from "./slash";
 import { handleSocialBackButton } from "./social";
 import { giveaways, buildGiveawayEmbed } from "./giveaway";
 import { handleJtcInteraction, handleVoiceStateUpdate } from "./joinToCreate";
+import { handleTicketInteraction } from "./tickets";
 import { logger } from "../lib/logger";
 import { processUserMessageAutomations, sendMemberMessage } from "./automation";
 
@@ -76,6 +77,10 @@ export function createBot(): Client {
   client.on("interactionCreate", async (interaction) => {
     if (interaction.isButton() && interaction.customId.startsWith("social:back:")) {
       await handleSocialBackButton(interaction);
+      return;
+    }
+    if (interaction.isButton() && interaction.customId.startsWith("ticket:close:")) {
+      await handleTicketInteraction(interaction);
       return;
     }
     if (

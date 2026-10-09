@@ -12,7 +12,7 @@ import { handlePurge, handlePurgeBot } from "./purge";
 import { hasNoPrefix, handleNoPrefix } from "./noprefix";
 import { handleHelp } from "./help";
 import { startGiveaway, endGiveaway, rerollGiveaway, parseDuration } from "./giveaway";
-import { handleKick, handleBan, handleUnban, handleNuke, handleSlowmode, handleLock, handleUnlock } from "./moderation";
+import { handleKick, handleBan, handleUnban, handleNuke, handleSlowmode, handleLock, handleUnlock, handleHide, handleUnhide } from "./moderation";
 import {
   handleUserInfo,
   handleServerInfo,
@@ -28,6 +28,7 @@ import {
 import { handleSetModlog, handleCaseLookup, handleCaseList } from "./cases";
 import { handleShip, handleSocialAction, SOCIAL_ACTIONS, type SocialActionName } from "./social";
 import { handleSteal } from "./steal";
+import { handleAutoModeration, handleAutomodCommand } from "./moderation";
 import {
   handleAutoReactCommand,
   handleGoodbyeCommand,
@@ -36,10 +37,18 @@ import {
 } from "./automation-commands";
 import { withPremiumReplies } from "./presentation";
 import { handleJtcCommand, handleVcCommand } from "./joinToCreate";
+import { handleTicketCommand } from "./tickets";
+import { handleMiningCommand } from "./mining";
+import { handleSocialRoleCommand } from "./socialRole";
+import { handleRoleShopCommand } from "./roleShop";
 
 const PREFIX = "g";
 
-export async function handleMessage(client: Client, incomingMessage: Message): Promise<void> {
+export async function handleMessage(
+  client: Client,
+  incomingMessage: Message,
+  options: { skipAutoModeration?: boolean } = {},
+): Promise<void> {
   if (incomingMessage.author.bot) return;
   if (!incomingMessage.guild) return;
   const message = withPremiumReplies(incomingMessage, client.user);
@@ -47,6 +56,8 @@ export async function handleMessage(client: Client, incomingMessage: Message): P
   const raw = message.content.trim();
   const noPrefix = hasNoPrefix(message);
   const content = (!raw.startsWith("!") && noPrefix) ? `!${raw}` : raw;
+
+  if (!options.skipAutoModeration && await handleAutoModeration(message)) return;
 
   await handleAfk(message, content);
 
@@ -77,6 +88,8 @@ export async function handleMessage(client: Client, incomingMessage: Message): P
     await handleGoodbyeCommand(message);
 
   // ── Moderation ────────────────────────────────────────────────────────────
+  } else if (lower === "!automod" || lower.startsWith("!automod ")) {
+    await handleAutomodCommand(message);
   } else if (lower === "!warn" || lower.startsWith("!warn ")) {
     await handleWarn(client, message);
   } else if (lower === "!warnings" || lower.startsWith("!warnings ")) {
@@ -101,6 +114,10 @@ export async function handleMessage(client: Client, incomingMessage: Message): P
     await handleLock(message);
   } else if (lower === "!unlock") {
     await handleUnlock(message);
+  } else if (lower === "!hide" || lower.startsWith("!hide ")) {
+    await handleHide(message, content.split(/\s+/).slice(1));
+  } else if (lower === "!unhide" || lower.startsWith("!unhide ")) {
+    await handleUnhide(message, content.split(/\s+/).slice(1));
   } else if (lower.startsWith("!purge")) {
     await handlePurge(message);
   } else if (lower.startsWith("!pb")) {
@@ -145,6 +162,18 @@ export async function handleMessage(client: Client, incomingMessage: Message): P
     await handleWordbombStop(message);
   } else if (lower === "!wbtop") {
     await handleWbTop(message);
+  } else if (lower === "!mine" || lower.startsWith("!mine ")) {
+    const args = content.split(/\s+/).slice(1);
+    await handleMiningCommand(message, args);
+  } else if (/^!(?:fish|hunt|forage|chop|explore|work|beg|crime|flip|coinflip|cf)(?:\s|$)/.test(lower)) {
+    const [subcommand = "", ...args] = content.trim().slice(1).split(/\s+/);
+    await handleMiningCommand(message, [subcommand.toLowerCase(), ...args]);
+  } else if (lower === "!shop" || lower.startsWith("!shop ")) {
+    const args = content.split(/\s+/).slice(1);
+    await handleRoleShopCommand(message, args);
+  } else if (/^!(?:balance|bal|inventory|inv|sell|upgrade|craft|daily|quest|quests|leaderboard|top|pay|give|duel)(?:\s|$)/.test(lower)) {
+    const [subcommand = "", ...args] = content.trim().slice(1).split(/\s+/);
+    await handleMiningCommand(message, [subcommand.toLowerCase(), ...args]);
   } else if (lower === "!ship" || lower.startsWith("!ship ")) {
     await handleShip(message);
   } else if (lower === "!steal" || lower.startsWith("!steal ")) {
@@ -157,6 +186,12 @@ export async function handleMessage(client: Client, incomingMessage: Message): P
   } else if (lower === "!jtc" || lower.startsWith("!jtc ")) {
     const args = content.split(/\s+/).slice(1);
     await handleJtcCommand(message, args);
+  } else if (lower === "!socialrole" || lower.startsWith("!socialrole ")) {
+    const args = content.split(/\s+/).slice(1);
+    await handleSocialRoleCommand(message, args);
+  } else if (lower === "!ticket" || lower.startsWith("!ticket ")) {
+    const args = content.split(/\s+/).slice(1);
+    await handleTicketCommand(message, args);
   } else {
     const command = lower.match(/^!([a-z]+)(?:\s|$)/)?.[1] as SocialActionName | undefined;
     if (command && Object.hasOwn(SOCIAL_ACTIONS, command)) {

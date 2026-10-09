@@ -20,6 +20,7 @@ import {
 import { eq } from "drizzle-orm";
 import { db, botJoinToCreateTable } from "@workspace/db";
 import { logger } from "../lib/logger";
+import { premiumColors } from "./presentation";
 
 interface JtcConfig {
   lobbyId: string;
@@ -83,7 +84,9 @@ const tempChannels = new Map<string, string>();
 
 const JTC_PREFIX = "jtc:";
 const RENAME_MODAL_ID = "jtc:rename_modal";
+const TRANSFER_MODAL_ID = "jtc:transfer_modal";
 const RENAME_INPUT_ID = "name";
+const TRANSFER_INPUT_ID = "owner";
 const USER_LIMITS = [0, 2, 5, 10];
 const OWNER_ONLY_MESSAGE = "Only the channel owner can use this.";
 
@@ -92,6 +95,7 @@ function buildControlPanel(ownerId: string): {
   components: ActionRowBuilder<ButtonBuilder>[];
 } {
   const embed = new EmbedBuilder()
+    .setColor(premiumColors.brand)
     .setTitle("Voice Channel Controls")
     .setDescription(
       [
@@ -101,6 +105,7 @@ function buildControlPanel(ownerId: string): {
         "🙈 Hide / 👁️ Show — control who can see the channel",
         "👥 Limit — cycle the user limit (none, 2, 5, 10)",
         "✏️ Rename — change the channel name",
+        "👑 Transfer — pass ownership to another member in the VC",
         "👑 Claim — take ownership when the owner has left",
       ].join("\n"),
     );
@@ -117,6 +122,7 @@ function buildControlPanel(ownerId: string): {
   const rowTwo = new ActionRowBuilder<ButtonBuilder>().addComponents(
     button("limit", "Limit"),
     button("rename", "Rename"),
+    button("transfer", "Transfer"),
     button("claim", "Claim"),
   );
 
@@ -347,6 +353,19 @@ async function handleJtcButton(interaction: ButtonInteraction): Promise<void> {
     return;
   }
 
+  if (action === "transfer") {
+    const modal = new ModalBuilder().setCustomId(TRANSFER_MODAL_ID).setTitle("Transfer Channel Ownership");
+    const input = new TextInputBuilder()
+      .setCustomId(TRANSFER_INPUT_ID)
+      .setLabel("Member name or @mention")
+      .setStyle(TextInputStyle.Short)
+      .setPlaceholder("@member or user id")
+      .setRequired(true);
+    modal.addComponents(new ActionRowBuilder<TextInputBuilder>().addComponents(input));
+    await interaction.showModal(modal);
+    return;
+  }
+
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   if (isAccessAction(action)) {
@@ -396,7 +415,7 @@ async function handleJtcRenameSubmit(interaction: ModalSubmitInteraction): Promi
 }
 
 const VC_USAGE =
-  "Usage: `!vc <lock|unlock|hide|show|limit|name|permit|reject|kick|pull|claim|info>`";
+  "Usage: `!vc help` | `!vc <lock|unlock|hide|show|limit|name|transfer|permit|reject|kick|pull|claim|info>`";
 
 export async function handleVcCommand(message: Message, args: string[]): Promise<void> {
   const guild = message.guild;
@@ -411,6 +430,23 @@ export async function handleVcCommand(message: Message, args: string[]): Promise
   const ownerId = tempChannels.get(channel.id);
 
   try {
+    if (sub === "help" || sub === "usage") {
+      await message.reply({
+        content:
+          "**Voice channel controls**\n" +
+          "`!vc help` — show this help\n" +
+          "`!vc lock` / `!vc unlock` — lock or unlock the channel\n" +
+          "`!vc hide` / `!vc show` — hide or show the channel\n" +
+          "`!vc limit <0-99>` — set the member limit\n" +
+          "`!vc name <new name>` — rename the channel\n" +
+          "`!vc transfer @user` — pass ownership to another member in the VC\n" +
+          "`!vc permit @user` / `!vc reject @user` — allow or deny access\n" +
+          "`!vc kick @user` / `!vc pull @user` — remove or pull a member into the VC\n" +
+          "`!vc claim` / `!vc info` — claim ownership or view channel info",
+      });
+      return;
+    }
+
     if (sub === "info") {
       const overwrite = channel.permissionOverwrites.cache.get(guild.roles.everyone.id);
       const locked = overwrite?.deny.has(PermissionFlagsBits.Connect) ?? false;
@@ -442,7 +478,7 @@ export async function handleVcCommand(message: Message, args: string[]): Promise
 
     const isOwnerCommand =
       isAccessAction(sub) ||
-      ["limit", "name", "permit", "reject", "kick", "move", "pull"].includes(sub);
+      ["limit", "name", "transfer", "owner", "permit", "reject", "kick", "move", "pull"].includes(sub);
     if (!isOwnerCommand) {
       await message.reply(VC_USAGE);
       return;
@@ -478,6 +514,26 @@ export async function handleVcCommand(message: Message, args: string[]): Promise
       }
       await channel.setName(name, "Join to Create: renamed by owner");
       await message.reply(`✏️ Channel renamed to **${name}**.`);
+      return;
+    }
+
+    if (sub === "transfer" || sub === "owner") {
+      const target = message.mentions.members?.first();
+      if (!target) {
+        await message.reply("Mention a member in this channel to transfer ownership, e.g. `!vc transfer @user`.");
+        return;
+      }
+      if (target.id === ownerId) {
+        await message.reply("You are already the owner of this channel.");
+        return;
+      }
+      if (target.voice.channelId !== channel.id) {
+        await message.reply("That member must be in this voice channel to become the new owner.");
+        return;
+      }
+      await transferOwnership(channel, target.id, message.author.id);
+      tempChannels.set(channel.id, target.id);
+      await message.reply(`👑 Ownership transferred to <@${target.id}>.`);
       return;
     }
 
@@ -651,7 +707,61 @@ export async function handleJtcInteraction(
     await handleJtcButton(interaction);
   } else if (interaction.isModalSubmit() && interaction.customId === RENAME_MODAL_ID) {
     await handleJtcRenameSubmit(interaction);
+  } else if (interaction.isModalSubmit() && interaction.customId === TRANSFER_MODAL_ID) {
+    await handleJtcTransferSubmit(interaction);
   }
+}
+
+async function handleJtcTransferSubmit(interaction: ModalSubmitInteraction): Promise<void> {
+  const channel = resolveTempChannel(interaction);
+  if (!channel) {
+    await interaction.reply({
+      content: "This channel is no longer a temporary voice channel.",
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  if (tempChannels.get(channel.id) !== interaction.user.id) {
+    await interaction.reply({ content: OWNER_ONLY_MESSAGE, flags: MessageFlags.Ephemeral });
+    return;
+  }
+
+  const raw = interaction.fields.getTextInputValue(TRANSFER_INPUT_ID).trim();
+  const targetMember = raw
+    ? (interaction.guild?.members.cache.get(raw.replace(/^<@!?|>$/g, "")) ??
+        interaction.guild?.members.cache.find((member) => member.user.username.toLowerCase() === raw.toLowerCase() || member.user.tag.toLowerCase() === raw.toLowerCase()) ??
+        null)
+    : null;
+
+  if (!targetMember) {
+    await interaction.reply({
+      content: "Mention a valid member in this channel or enter their user ID.",
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  if (targetMember.id === interaction.user.id) {
+    await interaction.reply({
+      content: "You are already the owner of this channel.",
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  if (targetMember.voice.channelId !== channel.id) {
+    await interaction.reply({
+      content: "That member must be in this voice channel to become the new owner.",
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  await transferOwnership(channel, targetMember.id, interaction.user.id);
+  tempChannels.set(channel.id, targetMember.id);
+  await interaction.editReply({ content: `👑 Ownership transferred to <@${targetMember.id}>.` });
 }
 
 export async function handleVoiceStateUpdate(

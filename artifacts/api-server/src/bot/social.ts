@@ -9,6 +9,7 @@ import {
 } from "discord.js";
 import { logger } from "../lib/logger";
 import { renderShipImage } from "./shipImage";
+import { canUseSocialCommands } from "./socialRole";
 
 interface SocialAction {
   description: string;
@@ -370,6 +371,89 @@ export const SOCIAL_ACTIONS = {
 
 export type SocialActionName = keyof typeof SOCIAL_ACTIONS;
 export const SOCIAL_ACTION_NAMES = Object.keys(SOCIAL_ACTIONS) as SocialActionName[];
+const SCORE_ACTIONS: ReadonlySet<SocialActionName> = new Set([
+  "aura",
+  "rizz",
+  "vibecheck",
+  "rate",
+]);
+
+function buildScoreCard(actionName: SocialActionName, targetName: string, targetId: string, avatarUrl: string): EmbedBuilder {
+  let score: number;
+  let minimum: number;
+  let maximum: number;
+  let scoreLabel: string;
+  let reading: string;
+
+  switch (actionName) {
+    case "aura": {
+      score = dailyScore("aura", targetId, -1000, 1000);
+      minimum = -1000;
+      maximum = 1000;
+      scoreLabel = `${score >= 0 ? "+" : ""}${score.toLocaleString()} aura`;
+      reading = score >= 750
+        ? "Unstoppable main-character energy."
+        : score >= 0
+          ? "Aura is looking good."
+          : "A little aura debt. Comeback loading!";
+      break;
+    }
+    case "rizz": {
+      score = dailyScore("rizz", targetId, 0, 100);
+      minimum = 0;
+      maximum = 100;
+      scoreLabel = `${score}/100`;
+      reading = score >= 85
+        ? "Certified smooth."
+        : score >= 60
+          ? "The charm is working."
+          : score >= 30
+            ? "Rizz is loading..."
+            : "Quiet confidence still counts.";
+      break;
+    }
+    case "vibecheck": {
+      score = dailyScore("vibe", targetId, 0, 100);
+      minimum = 0;
+      maximum = 100;
+      scoreLabel = `${score}/100`;
+      reading = score >= 80
+        ? "Excellent vibes."
+        : score >= 55
+          ? "Good energy all around."
+          : score >= 30
+            ? "A calm, low-key vibe."
+            : "Recharge mode. Be kind to yourself.";
+      break;
+    }
+    case "rate": {
+      score = dailyScore("rate", targetId, 0, 100);
+      minimum = 0;
+      maximum = 100;
+      scoreLabel = `${(score / 10).toFixed(1)}/10`;
+      reading = "A totally-for-fun daily rating.";
+      break;
+    }
+    default:
+      throw new Error(`No score card is defined for ${actionName}`);
+  }
+
+  const filledBlocks = Math.round(((score - minimum) / (maximum - minimum)) * 12);
+  const meter = `${"▰".repeat(filledBlocks)}${"▱".repeat(12 - filledBlocks)}`;
+
+  return new EmbedBuilder()
+    .setColor(0x2b2d31)
+    .setAuthor({ name: "DAILY SCORECARD" })
+    .setTitle(SOCIAL_ACTIONS[actionName].title)
+    .setDescription(`Today's reading for **${targetName}**`)
+    .setThumbnail(avatarUrl)
+    .addFields(
+      { name: "SCORE", value: `**${scoreLabel}**\n${meter}`, inline: true },
+      { name: "READING", value: reading, inline: true },
+    )
+    .setFooter({ text: "Refreshes daily • Just for fun" })
+    .setTimestamp();
+}
 
 function safeDisplayName(name: string): string {
   return name.replace(/@/g, "@\u200b");
@@ -432,47 +516,87 @@ interface NekoGifResponse {
 }
 
 const GIFS_PER_REQUEST = 20;
+const GIF_POOL_BATCHES = 3;
+const GIF_POOL_REFILL_THRESHOLD = 5;
 const RECENT_GIF_HISTORY = 100;
 const recentGifUrlsByCategory = new Map<string, Set<string>>();
+const gifPoolsByCategory = new Map<string, (NekoGifResult & { url: string })[]>();
+const gifPoolLoadsByCategory = new Map<string, Promise<void>>();
+
+async function refillGifPool(category: string): Promise<void> {
+  const pool = gifPoolsByCategory.get(category) ?? [];
+  if (pool.length > GIF_POOL_REFILL_THRESHOLD) return;
+
+  const pendingLoad = gifPoolLoadsByCategory.get(category);
+  if (pendingLoad) {
+    await pendingLoad;
+    return;
+  }
+
+  const load = (async () => {
+    const batches = await Promise.allSettled(
+      Array.from({ length: GIF_POOL_BATCHES }, async () => {
+        const endpoint = new URL(`https://nekos.best/api/v2/${category}`);
+        endpoint.searchParams.set("amount", String(GIFS_PER_REQUEST));
+        const response = await fetch(endpoint, {
+          headers: {
+            Accept: "application/json",
+            "User-Agent": "Mainz (https://github.com/Muzammil786k/Mainz)",
+          },
+          signal: AbortSignal.timeout(5_000),
+        });
+        if (!response.ok) {
+          throw new Error(`Anime GIF service returned HTTP ${response.status}`);
+        }
+        const data = (await response.json()) as NekoGifResponse;
+        return data.results ?? [];
+      }),
+    );
+
+    const knownUrls = new Set(pool.map((gif) => gif.url));
+    for (const batch of batches) {
+      if (batch.status !== "fulfilled") continue;
+      for (const result of batch.value) {
+        if (typeof result.url !== "string" || knownUrls.has(result.url)) continue;
+        try {
+          const url = new URL(result.url);
+          if (url.protocol !== "https:" || url.hostname !== "nekos.best") continue;
+          pool.push({ ...result, url: url.href });
+          knownUrls.add(url.href);
+        } catch {
+          // Ignore malformed URLs returned by the upstream GIF service.
+        }
+      }
+    }
+    gifPoolsByCategory.set(category, pool);
+  })();
+
+  gifPoolLoadsByCategory.set(category, load);
+  try {
+    await load;
+  } finally {
+    if (gifPoolLoadsByCategory.get(category) === load) {
+      gifPoolLoadsByCategory.delete(category);
+    }
+  }
+}
 
 async function fetchAnimeGif(category: string): Promise<{ url: string; animeName?: string } | null> {
   try {
-    const endpoint = new URL(`https://nekos.best/api/v2/${category}`);
-    endpoint.searchParams.set("amount", String(GIFS_PER_REQUEST));
-    const response = await fetch(endpoint, {
-      headers: {
-        Accept: "application/json",
-        "User-Agent": "Mainz (https://github.com/Muzammil786k/Mainz)",
-      },
-      signal: AbortSignal.timeout(5_000),
-    });
-    if (!response.ok) {
-      throw new Error(`Anime GIF service returned HTTP ${response.status}`);
-    }
-
-    const data = (await response.json()) as NekoGifResponse;
-    const candidates = (data.results ?? []).filter(
-      (result): result is NekoGifResult & { url: string } =>
-        typeof result.url === "string" && result.url.length > 0,
-    );
-    if (candidates.length === 0) {
-      throw new Error("Anime GIF service returned no GIF URL");
-    }
-
+    await refillGifPool(category);
+    const pool = gifPoolsByCategory.get(category) ?? [];
     const recent = recentGifUrlsByCategory.get(category) ?? new Set<string>();
-    const freshCandidates = candidates.filter((result) => !recent.has(result.url));
-    const pool = freshCandidates.length > 0 ? freshCandidates : candidates;
-    const result = pool[Math.floor(Math.random() * pool.length)];
-    if (!result) {
-      throw new Error("Anime GIF service returned no selectable GIF");
-    }
+    const freshCandidates = pool.filter((result) => !recent.has(result.url));
+    const candidates = freshCandidates.length > 0 ? freshCandidates : pool;
+    if (candidates.length === 0) return null;
 
-    const gifUrl = new URL(result.url);
-    if (gifUrl.protocol !== "https:" || gifUrl.hostname !== "nekos.best") {
-      throw new Error("Anime GIF service returned an unexpected URL");
-    }
+    const result = candidates[Math.floor(Math.random() * candidates.length)];
+    if (!result) return null;
 
-    recent.add(gifUrl.href);
+    const poolIndex = pool.findIndex((gif) => gif.url === result.url);
+    if (poolIndex >= 0) pool.splice(poolIndex, 1);
+
+    recent.add(result.url);
     while (recent.size > RECENT_GIF_HISTORY) {
       const oldestUrl = recent.values().next().value;
       if (!oldestUrl) break;
@@ -481,7 +605,7 @@ async function fetchAnimeGif(category: string): Promise<{ url: string; animeName
     recentGifUrlsByCategory.set(category, recent);
 
     return {
-      url: gifUrl.href,
+      url: result.url,
       animeName: typeof result.anime_name === "string" ? result.anime_name : undefined,
     };
   } catch (error) {
@@ -492,6 +616,7 @@ async function fetchAnimeGif(category: string): Promise<{ url: string; animeName
 
 export async function handleSocialAction(message: Message, actionName: SocialActionName): Promise<void> {
   if (!message.guild) return;
+  if (!(await canUseSocialCommands(message))) return;
 
   const targetId =
     message.mentions.users.first()?.id ??
@@ -512,6 +637,20 @@ export async function handleSocialAction(message: Message, actionName: SocialAct
   }
 
   const action = SOCIAL_ACTIONS[actionName];
+  if (SCORE_ACTIONS.has(actionName)) {
+    const embed = buildScoreCard(
+      actionName,
+      safeDisplayName(target.displayName),
+      target.id,
+      target.user.displayAvatarURL({ size: 256 }),
+    );
+    await message.reply({
+      embeds: [embed],
+      allowedMentions: { parse: [], repliedUser: false },
+    });
+    return;
+  }
+
   const gif = await fetchAnimeGif(action.gifCategory);
   const actorName = safeDisplayName(message.member?.displayName ?? message.author.username);
   const targetName = safeDisplayName(target.displayName);
@@ -686,12 +825,16 @@ export async function handleShip(message: Message): Promise<void> {
             : "Opposites attract; the memes are guaranteed.";
 
   const embed = new EmbedBuilder()
-    .setColor(0xff72a6)
-    .setTitle("💘 Ship check")
-    .setDescription(
-      `**${safeDisplayName(firstMember.displayName)} × ${safeDisplayName(secondMember.displayName)}**\n\n${meter} **${score}%**\n${verdict}`,
+    .setColor(0x2b2d31)
+    .setAuthor({ name: "MAINZ MATCHMAKER  •  PAIR REPORT" })
+    .setTitle("💘 Compatibility check")
+    .setDescription(`**${safeDisplayName(firstMember.displayName)}**  ×  **${safeDisplayName(secondMember.displayName)}**`)
+    .addFields(
+      { name: "CHEMISTRY", value: `**${score}%**\n${meter}`, inline: true },
+      { name: "PAIR VIBE", value: verdict, inline: true },
     )
-    .setFooter({ text: "Just for fun — not a real compatibility reading." });
+    .setFooter({ text: "A playful pairing score • Not a real compatibility prediction" })
+    .setTimestamp();
 
   let files: AttachmentBuilder[] = [];
   try {
