@@ -27,6 +27,8 @@ Members who join a designated lobby voice channel get their own temporary voice 
 
 Each temporary channel's chat gets a control panel with Lock, Unlock, Hide, Show, Limit (cycles 0/2/5/10), Rename and Claim buttons; all but Claim are owner-only, and ownership passes to another member when the owner leaves.
 
+Owners can also manage their channel with `/voice` subcommands: `lock`, `unlock`, `hide`, `show`, `limit`, `rename`, `permit`, `reject` and `kick`.
+
 The bot needs the Manage Channels and Move Members permissions, and the Guild Voice States gateway intent. Temporary channels are tracked in memory, so channels left over from before a restart are not cleaned up automatically.
 
 The bot service must remain running continuously because Discord bots require a long-lived process.

@@ -10,6 +10,7 @@ import {
   TextInputBuilder,
   TextInputStyle,
   type ButtonInteraction,
+  type ChatInputCommandInteraction,
   type Client,
   type ModalSubmitInteraction,
   type VoiceChannel,
@@ -310,6 +311,99 @@ async function handleJtcRenameSubmit(interaction: ModalSubmitInteraction): Promi
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
   await channel.setName(name, "Join to Create: renamed by owner");
   await interaction.editReply({ content: `✏️ Channel renamed to **${name}**.` });
+}
+
+export async function handleVoiceSlashCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+  const guild = interaction.guild;
+  const current = guild?.voiceStates.cache.get(interaction.user.id)?.channel;
+  if (!guild || !current || current.type !== ChannelType.GuildVoice || !tempChannels.has(current.id)) {
+    await interaction.reply({
+      content: "You are not in a temporary voice channel.",
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+  const channel = current;
+
+  const ownerId = tempChannels.get(channel.id);
+  if (interaction.user.id !== ownerId) {
+    await interaction.reply({ content: OWNER_ONLY_MESSAGE, flags: MessageFlags.Ephemeral });
+    return;
+  }
+
+  const subcommand = interaction.options.getSubcommand();
+  const target = interaction.options.getUser("user");
+  if ((subcommand === "reject" || subcommand === "kick") && target?.id === ownerId) {
+    await interaction.reply({ content: "You can't target the channel owner.", flags: MessageFlags.Ephemeral });
+    return;
+  }
+
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  const everyone = guild.roles.everyone;
+  logger.info({ guildId: guild.id, channelId: channel.id, userId: interaction.user.id, subcommand }, "Voice slash command");
+
+  switch (subcommand) {
+    case "lock":
+      await channel.permissionOverwrites.edit(everyone, { Connect: false });
+      await interaction.editReply({ content: "🔒 Channel locked." });
+      break;
+    case "unlock":
+      await channel.permissionOverwrites.edit(everyone, { Connect: null });
+      await interaction.editReply({ content: "🔓 Channel unlocked." });
+      break;
+    case "hide":
+      await channel.permissionOverwrites.edit(everyone, { ViewChannel: false });
+      await interaction.editReply({ content: "🙈 Channel hidden." });
+      break;
+    case "show":
+      await channel.permissionOverwrites.edit(everyone, { ViewChannel: null });
+      await interaction.editReply({ content: "👁️ Channel visible." });
+      break;
+    case "limit": {
+      const limit = interaction.options.getInteger("amount", true);
+      await channel.setUserLimit(limit);
+      await interaction.editReply({
+        content: limit === 0 ? "👥 User limit removed." : `👥 User limit set to ${limit}.`,
+      });
+      break;
+    }
+    case "rename": {
+      const name = interaction.options.getString("name", true).trim().slice(0, 100);
+      if (!name) {
+        await interaction.editReply({ content: "Channel name cannot be empty." });
+        break;
+      }
+      await channel.setName(name, "Join to Create: renamed by owner");
+      await interaction.editReply({ content: `✏️ Channel renamed to **${name}**.` });
+      break;
+    }
+    case "permit": {
+      const user = interaction.options.getUser("user", true);
+      await channel.permissionOverwrites.edit(user, { Connect: true, ViewChannel: true });
+      await interaction.editReply({ content: `✅ <@${user.id}> can now join this channel.` });
+      break;
+    }
+    case "reject": {
+      const user = interaction.options.getUser("user", true);
+      await channel.permissionOverwrites.edit(user, { Connect: false, ViewChannel: false });
+      await channel.members.get(user.id)?.voice.disconnect("Join to Create: rejected by owner");
+      await interaction.editReply({ content: `🚫 <@${user.id}> can no longer join this channel.` });
+      break;
+    }
+    case "kick": {
+      const user = interaction.options.getUser("user", true);
+      const member = channel.members.get(user.id);
+      if (!member) {
+        await interaction.editReply({ content: "That user is not in your voice channel." });
+        break;
+      }
+      await member.voice.disconnect("Join to Create: kicked by owner");
+      await interaction.editReply({ content: `👢 <@${user.id}> was disconnected from the channel.` });
+      break;
+    }
+    default:
+      await interaction.editReply({ content: "Unknown subcommand." });
+  }
 }
 
 export async function handleJtcInteraction(
