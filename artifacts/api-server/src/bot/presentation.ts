@@ -5,6 +5,8 @@ import {
   type Message,
   type MessageCreateOptions,
 } from "discord.js";
+import { and, eq } from "drizzle-orm";
+import { botEmbedOverridesTable, db } from "@workspace/db";
 
 const FOOTER_TEXT = "Use /help to see all commands";
 const BRAND_COLOR = 0x2b2d31;
@@ -35,10 +37,60 @@ function brandEmbed(value: unknown, user: ClientUser | null, fallbackText: strin
   return embed;
 }
 
+const overrideCache = new Map<string, {
+  expiresAt: number;
+  settings: Awaited<ReturnType<typeof loadEmbedOverride>>;
+}>();
+
+type EmbedOverride = typeof botEmbedOverridesTable.$inferSelect | null;
+
+async function loadEmbedOverride(guildId: string, commandKey: string): Promise<EmbedOverride> {
+  const [settings] = await db
+    .select()
+    .from(botEmbedOverridesTable)
+    .where(and(
+      eq(botEmbedOverridesTable.guildId, guildId),
+      eq(botEmbedOverridesTable.commandKey, commandKey),
+    ));
+  return settings ?? null;
+}
+
+export function invalidateEmbedOverrideCache(guildId: string, commandKey: string): void {
+  overrideCache.delete(`${guildId}:${commandKey}`);
+}
+
+async function getEmbedOverride(guildId: string, commandKey: string) {
+  const key = `${guildId}:${commandKey}`;
+  const cached = overrideCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.settings;
+  const settings = await loadEmbedOverride(guildId, commandKey);
+  overrideCache.set(key, { settings, expiresAt: Date.now() + 60_000 });
+  return settings;
+}
+
+function commandKeyFromMessage(message: Message): string | null {
+  const match = /^(?:!|\/)?([a-z0-9_-]+)/i.exec(message.content.trim());
+  const key = match?.[1]?.toLowerCase();
+  return key && key !== "embed" ? key : null;
+}
+
+function applyEmbedOverride(embed: EmbedBuilder, settings: EmbedOverride): EmbedBuilder {
+  if (!settings) return embed;
+  if (settings.title !== null) embed.setTitle(settings.title);
+  if (settings.description !== null) embed.setDescription(settings.description);
+  if (settings.color) embed.setColor(Number.parseInt(settings.color.slice(1), 16));
+  if (settings.imageUrl) embed.setImage(settings.imageUrl);
+  if (settings.thumbnailUrl) embed.setThumbnail(settings.thumbnailUrl);
+  if (settings.footerText !== null) embed.setFooter({ text: settings.footerText });
+  if (settings.fields !== null) embed.setFields(settings.fields);
+  return embed;
+}
+
 function styleReplyPayload(
   payload: unknown,
   user: ClientUser | null,
   clearExistingContent = false,
+  override: Awaited<ReturnType<typeof loadEmbedOverride>> = null,
 ): unknown {
   if (typeof payload !== "string" && (!payload || typeof payload !== "object")) {
     return payload;
@@ -52,7 +104,9 @@ function styleReplyPayload(
   const existingEmbeds = Array.isArray(options.embeds) ? options.embeds : [];
 
   if (existingEmbeds.length > 0) {
-    options.embeds = existingEmbeds.map((embed) => brandEmbed(embed, user, content));
+    options.embeds = existingEmbeds.map((embed) =>
+      applyEmbedOverride(brandEmbed(embed, user, content), override),
+    );
     return options;
   }
 
@@ -67,10 +121,27 @@ function styleReplyPayload(
     } else {
       delete options.content;
     }
-    options.embeds = [embed];
+    options.embeds = [applyEmbedOverride(embed, override)];
   }
 
   return options;
+}
+
+async function styleChannelPayload(
+  payload: unknown,
+  user: ClientUser | null,
+  override: EmbedOverride,
+): Promise<unknown> {
+  if (!payload || typeof payload !== "object") return payload;
+  const options = payload as Record<string, unknown>;
+  if (!Array.isArray(options.embeds) || options.embeds.length === 0) return payload;
+  const content = typeof options.content === "string" ? options.content : "";
+  return {
+    ...options,
+    embeds: options.embeds.map((embed) =>
+      applyEmbedOverride(brandEmbed(embed, user, content), override),
+    ),
+  };
 }
 
 /**
@@ -78,20 +149,53 @@ function styleReplyPayload(
  * individual command handlers build their payloads.
  */
 export function withPremiumReplies(message: Message, user: ClientUser | null): Message {
+  const commandKey = commandKeyFromMessage(message);
+  const guildId = message.guildId;
+  const style = async (payload: unknown, clearExistingContent = false) => {
+    const override = guildId && commandKey
+      ? await getEmbedOverride(guildId, commandKey)
+      : null;
+    return styleReplyPayload(payload, user, clearExistingContent, override);
+  };
   const wrap = (target: Message): Message =>
     new Proxy(target, {
       get(original, property) {
         if (property === "reply") {
           return async (payload: unknown) => {
             const reply = original.reply.bind(original) as (value: unknown) => Promise<Message>;
-            return wrap(await reply(styleReplyPayload(payload, user)));
+            return wrap(await reply(await style(payload)));
           };
         }
         if (property === "edit") {
           return async (payload: unknown) => {
             const edit = original.edit.bind(original) as (value: unknown) => Promise<Message>;
-            return wrap(await edit(styleReplyPayload(payload, user, true)));
+            return wrap(await edit(await style(payload, true)));
           };
+        }
+        if (property === "channel") {
+          const channel = Reflect.get(original, property, original);
+          return new Proxy(channel, {
+            get(target, channelProperty) {
+              if (channelProperty === "send") {
+                return async (payload: unknown) => {
+                  const send = Reflect.get(target, "send", target);
+                  if (typeof send !== "function") {
+                    throw new TypeError("This channel does not support sending messages");
+                  }
+                  const override = guildId && commandKey
+                    ? await getEmbedOverride(guildId, commandKey)
+                    : null;
+                  return Reflect.apply(
+                    send,
+                    target,
+                    [await styleChannelPayload(payload, user, override)],
+                  );
+                };
+              }
+              const value = Reflect.get(target, channelProperty, target);
+              return typeof value === "function" ? value.bind(target) : value;
+            },
+          });
         }
 
         const value = Reflect.get(original, property, original);

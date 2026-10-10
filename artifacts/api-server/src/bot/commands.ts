@@ -41,6 +41,18 @@ import { handleTicketCommand } from "./tickets";
 import { handleMiningCommand } from "./mining";
 import { handleSocialRoleCommand } from "./socialRole";
 import { handleRoleShopCommand } from "./roleShop";
+import {
+  awardChatXp,
+  handleBoostersCommand,
+  handleLevelProfileCommand,
+  handleLevelUpCommand,
+} from "./experience";
+import { handleVoteCommand } from "./voting";
+import { checkEconomyChannel, handleEconomyChannelCommand } from "./economy-settings";
+import { handleCrateCommand } from "./crates";
+import { handleBoostMessageCommand } from "./boost-message";
+import { handleEmbedCommand } from "./embeds";
+import { logger } from "../lib/logger";
 
 const PREFIX = "g";
 
@@ -59,11 +71,38 @@ export async function handleMessage(
 
   if (!options.skipAutoModeration && await handleAutoModeration(message)) return;
 
+  if (!content.startsWith("!")) {
+    void awardChatXp(message).catch((err: unknown) => {
+      logger.error(
+        { err, guildId: message.guild?.id, userId: message.author.id },
+        "Failed to award chat XP",
+      );
+    });
+  }
+
   await handleAfk(message, content);
 
   if (!content.startsWith("!") && !noPrefix) return;
 
   const lower = content.toLowerCase();
+
+  if (lower === "!economy" || lower.startsWith("!economy ")) {
+    await handleEconomyChannelCommand(message);
+    return;
+  }
+  if (lower === "!crate" || lower.startsWith("!crate ")) {
+    await handleCrateCommand(message);
+    return;
+  }
+  if (lower === "!boostmessage" || lower.startsWith("!boostmessage ")) {
+    await handleBoostMessageCommand(message);
+    return;
+  }
+  if (lower === "!embed" || lower.startsWith("!embed ")) {
+    await handleEmbedCommand(message);
+    return;
+  }
+  if (!(await checkEconomyChannel(message, content))) return;
 
   // ── Giveaway ──────────────────────────────────────────────────────────────
   if (lower === `!${PREFIX}start` || lower.startsWith(`!${PREFIX}start `)) {
@@ -178,6 +217,17 @@ export async function handleMessage(
     await handleShip(message);
   } else if (lower === "!steal" || lower.startsWith("!steal ")) {
     await handleSteal(message);
+
+  // ── Experience and voting ─────────────────────────────────────────────────
+  } else if (lower === "!lvl" || lower === "!level") {
+    await handleLevelProfileCommand(message);
+  } else if (lower === "!boosters") {
+    await handleBoostersCommand(message);
+  // ── Experience ────────────────────────────────────────────────────────────
+  } else if (lower === "!levelup" || lower.startsWith("!levelup ")) {
+    await handleLevelUpCommand(message);
+  } else if (lower === "!vote" || lower.startsWith("!vote ")) {
+    await handleVoteCommand(message);
 
   // ── Voice (Join to Create) ────────────────────────────────────────────────
   } else if (lower === "!voice" || lower.startsWith("!voice ")) {

@@ -310,6 +310,22 @@ async function fetchAssetImage(
     sourceImage = await renderLottieSticker(sourceImage);
   }
 
+  if (kind === "sticker" && source.extension === "apng") {
+    const metadata = await sharp(sourceImage, { animated: true }).metadata();
+    if (metadata.width !== STICKER_DIMENSION || metadata.height !== STICKER_DIMENSION) {
+      throw new Error("Animated stickers must be exactly 320×320 pixels to preserve their animation.");
+    }
+    if (!metadata.pages || metadata.pages < 2) {
+      throw new Error("The source sticker did not contain animation frames.");
+    }
+    if (sourceImage.length > MAX_STICKER_BYTES) {
+      throw new Error("The animated sticker is larger than Discord's 512 KiB limit.");
+    }
+
+    // APNG is a PNG container; upload the original frames rather than flattening them through image conversion.
+    return { data: sourceImage, extension: "png" };
+  }
+
   if (kind === "emoji" && source.sourceType === "emoji") {
     if (sourceImage.length > MAX_EMOJI_BYTES) {
       throw new Error("The image is too large to add as an emoji.");

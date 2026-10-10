@@ -211,7 +211,10 @@ export async function handleBan(client: Client, message: Message): Promise<void>
     await target.send(premiumMessagePayload({
       embeds: [new EmbedBuilder().setColor(C).setTitle(`🔨 You were banned from ${message.guild.name}`).addFields({ name: "Reason", value: reason })],
     }, message.client?.user ?? null)).catch(() => {});
-    await target.ban({ reason });
+    await target.ban({
+      reason,
+      deleteMessageSeconds: 7 * 24 * 60 * 60,
+    });
     const c = await logCase(client, { type: "BAN", guildId: message.guild.id, targetId: target.id, targetTag: target.user.tag, moderatorId: message.author.id, reason });
     await message.reply({ embeds: [new EmbedBuilder().setColor(C).setDescription(`✅ **${target.user.username}** has been banned. | Case **#${c.id}**\n**Reason:** ${reason}`)] });
   } catch {

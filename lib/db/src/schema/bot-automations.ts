@@ -28,5 +28,8 @@ export const botGuildMessagesTable = pgTable("bot_guild_messages", {
   welcomeTemplate: text("welcome_template"),
   goodbyeChannelId: text("goodbye_channel_id"),
   goodbyeTemplate: text("goodbye_template"),
+  boostChannelId: text("boost_channel_id"),
+  boostTitle: text("boost_title"),
+  boostTemplate: text("boost_template"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });

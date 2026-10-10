@@ -503,23 +503,18 @@ function buildAuraCard(
   gifUrl?: string,
 ): EmbedBuilder {
   const mood = auraMood(score);
-  const filledBlocks = Math.round(((score + 1000) / 2000) * 14);
-  const meter = `${"▰".repeat(filledBlocks)}${"▱".repeat(14 - filledBlocks)}`;
+  const filledBlocks = Math.round(((score + 1000) / 2000) * 8);
+  const meter = `${"▰".repeat(filledBlocks)}${"▱".repeat(8 - filledBlocks)}`;
   const embed = new EmbedBuilder()
     .setColor(mood.color)
     .setAuthor({ name: `${targetName}'s daily aura`, iconURL: avatarUrl })
-    .setTitle(`✨ ${mood.title} ✨`)
-    .setDescription(`## ${score >= 0 ? "+" : ""}${score.toLocaleString()} AURA\n${mood.reading}`)
-    .addFields(
-      { name: "AURA METER", value: meter },
-      { name: "SCAN", value: "Daily reading • Just for fun", inline: true },
-      { name: "SUBJECT", value: targetName, inline: true },
+    .setTitle(`✨ ${mood.title}`)
+    .setDescription(
+      `**${score >= 0 ? "+" : ""}${score.toLocaleString()} aura**  ${meter}\n${mood.reading}`,
     )
-    .setThumbnail(avatarUrl)
-    .setFooter({ text: "Your aura refreshes every day." })
-    .setTimestamp();
+    .setFooter({ text: "Daily score • Just for fun" });
 
-  if (gifUrl) embed.setImage(gifUrl);
+  if (gifUrl) embed.setThumbnail(gifUrl);
 
   return embed;
 }

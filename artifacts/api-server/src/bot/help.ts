@@ -57,7 +57,7 @@ function page2(): EmbedBuilder {
       { name: "`!mute @user <duration> [reason]` • `/mute`", value: "Timeout a member. `30s` `5m` `2h` `1d`, max 28 days.\n*(Timeout Members)*" },
       { name: "`!unmute @user` • `/unmute`", value: "Remove a member timeout.\n*(Timeout Members)*" },
       { name: "`!kick @user [reason]` • `/kick`", value: "Kick a member and log a case.\n*(Kick Members)*" },
-      { name: "`!ban @user [reason]` • `/ban`", value: "Ban a member and log a case.\n*(Ban Members)*" },
+      { name: "`!ban @user [reason]` • `/ban`", value: "Delete the member's messages from the past 7 days, then ban them and log a case.\n*(Ban Members)*" },
       { name: "`!unban <user_id>` • `/unban`", value: "Unban a user by ID.\n*(Ban Members)*" },
       { name: "`!nuke` • `/nuke`", value: "Clone the channel and delete the old one. Confirmation required.\n*(Manage Channels)*" },
       { name: "`!slowmode <seconds>` • `/slowmode`", value: "Set slowmode from 0 to 21600 seconds.\n*(Manage Channels)*" },
@@ -80,8 +80,12 @@ function page3(): EmbedBuilder {
       { name: "`!noprefix @role` • `/noprefix`", value: "Let a role use commands without `!`; use `remove` to disable it.\n*(Manage Server)*" },
       { name: "`!socialrole set @role` • `/socialrole set`", value: "Require a role, such as Level 50, to use social actions like `!kiss` and `!hug`. Check `status` or clear with `remove|clear|off`.\n*(Manage Server)*" },
       { name: "`!role @user @role` • `/role`", value: "Add or remove a role from a member.\n*(Manage Roles)*" },
+      { name: "`!levelup channel #channel|reset`", value: "Choose where level-up announcements are sent. Control chat XP channels with `!levelup allow #channel`, `!levelup disallow #channel`, `!levelup allowed`, or `!levelup clearallowed` (no channel restrictions means all text channels). Configure role rewards with `!levelup role set <level> @role`, `!levelup role remove <level>`, and `!levelup role list`; newly reached level roles are added without removing previous rewards. Voice XP is unchanged by chat channel restrictions. Customize the embed with `!levelup title`, `!levelup description`, and `!levelup color`; use `!levelup status` to view settings. Placeholders include `{user}`, `{username}`, `{level}`, `{levels_gained}`, `{xp}`, `{total_xp}`, `{progress}`, and `{next_level_xp}`.\n*(Manage Server)*" },
+      { name: "`!lvl`", value: "Open your level profile with progress, credits, active boosters, and the server leaderboard. Buttons let you toggle server and DM level-up notifications." },
+      { name: "`!vote setup #channel <top.gg-url> <discadia-url>`", value: "Configure the vote reward channel and links. Top.gg and Discadia webhooks grant a 20% XP boost for 12 hours in the configured server. Use `!vote status` or `!vote disable`.\n*(Manage Server; webhook auth secrets must be configured on the bot host)*" },
       { name: "`!nick @user <name|reset>` • `/nick`", value: "Change or reset a member nickname.\n*(Manage Nicknames)*" },
       { name: "`!announce #channel <message>` • `/announce`", value: "Send an announcement embed to a channel.\n*(Manage Server)*" },
+      { name: "`!embed`", value: "Create named embeds with title, description, hex color, images, thumbnails, footer and fields; preview with `show` and post with `send`. Customize command-response embeds separately with `!embed override`; reset with `override-reset`.\n*(Manage Server)*" },
       { name: "`!voice help` • `!v help` • `/voice help`", value: "Manage your Join to Create channel: `info` `bump` `lock` `unlock` `name <name>` `size <n>` `bitrate <kbps>` `permit|unpermit @user` `kick|ban|unban @user` `unbanall` `reset` `claim` `transfer @user`. `!vc` remains an alias. Channel controls are owner-only; `info`, `claim`, and help are available to everyone." },
       { name: "`!jtc set #lobby [#category]` • `/jtc set`", value: "Choose the Join to Create lobby voice channel and optional category.\n*(Manage Server)*" },
       { name: "`!jtc remove|disable` • `!jtc status` • `/jtc`", value: "Turn off Join to Create, or show the configured lobby and category.\n*(Manage Server)*" },
@@ -121,6 +125,7 @@ function pageAutomation(): EmbedBuilder {
       { name: "`!welcome remove` • `/welcome remove`", value: "Turn off welcome messages." },
       { name: "`!goodbye set #channel <message>` • `/goodbye set`", value: "Post a branded goodbye when a member leaves. Supports the same placeholders." },
       { name: "`!goodbye remove` • `/goodbye remove`", value: "Turn off goodbye messages." },
+      { name: "`!boostmessage set #channel`", value: "Post the perk embed when a member starts boosting. Customize with `!boostmessage title <text>` and `!boostmessage edit <description>`; use `{user}`, `{username}`, `{server}` placeholders. Restore the default embed with `!boostmessage reset`. Check with `!boostmessage status` or disable with `!boostmessage remove`.\n*(Manage Server)*" },
     )
     .setFooter({ text: HELP_FOOTER });
 }
@@ -133,18 +138,21 @@ function page5(): EmbedBuilder {
       { name: "`!wbstop` / `!wordbomb stop` • `/wbstop`", value: "Stop the current Word Bomb game.\n*(Manage Server)*" },
       { name: "`!wbtop` • `/wbtop`", value: "Show the Word Bomb win leaderboard for this server." },
       { name: "✅ **Command notes**", value: "Slash commands appear server-by-server after the bot starts. Prefix commands continue to work as before.\n\nFor accurate online/offline presence counts, enable **Server Members Intent** and **Presence Intent** in the Discord Developer Portal." },
+      { name: "📈 **Server levels**", value: "Earn **15–25 XP** from chat (once per minute) and **10 XP** per minute in an active voice channel with at least two non-bot members. AFK and self-deafened voice sessions don't earn XP. Every **100 XP** grants a level; level-up embeds appear in the channel where you earned the XP." },
     )
     .setFooter({ text: HELP_FOOTER });
 }
 
 function pageEconomy(): EmbedBuilder {
   return helpPage("💰 Economy")
+    .setDescription("Economy commands can be restricted to one text channel by a server manager with `!economy set #channel`. Check with `!economy status` or remove the restriction with `!economy remove`.")
     .addFields(
       { name: "⛏️ **Gathering games**", value: "`!mine` — ores\n`!fish` — fishing\n`!hunt` — hunting\n`!forage` — berries and herbs\n`!chop` — woodcutting\n`!explore` — find salvage and relics" },
       { name: "💼 **Earn coins**", value: "`!work` — hourly shift\n`!beg` — ask for change\n`!crime` — risky payout\n`!coinflip` / `!cf <bet up to 250000> <heads|tails>`" },
       { name: "🪙 **Wallet, market & crafting**", value: "`!balance` `!inventory` `!sell <item|all> [amount]`\n`!daily` — claim daily coins\n`!mine shop` `!upgrade`\n`!craft [tool]` — craft a rod, bow, sickle, axe, compass, or backpack" },
       { name: "🏷️ **Role shop**", value: "`!shop` — browse numbered role/price pages\n`!shop buy @role` — buy with coins\n`!shop add @role <price>` — add a listing\n`!shop edit @role <new-price>` — edit its price\n`!shop remove @role` — remove a listing (**Manage Server**)" },
       { name: "🎯 **Progress & players**", value: "`!quest` `!leaderboard`\n`!pay @member <coins>` `!give @member <item> <amount>`\n`!duel @member [wager up to 250000]`\nTransfers and duels require the other member's approval." },
+      { name: "🎁 **Mysterious Crates**", value: "React 🦉 to win a **25% XP Boost for 1 hour**. Check active boosts with `!boosters`. Server managers configure crate events with `!crate setup #channel [30m]`, change the interval with `!crate interval 1h`, inspect with `!crate status`, or pause/resume with `!crate pause|resume`." },
     )
     .setFooter({ text: HELP_FOOTER });
 }
@@ -216,6 +224,19 @@ function socialCategory(
     .setFooter({ text: HELP_FOOTER });
 }
 
+function scoresCategory(): EmbedBuilder {
+  return helpPage("📊 Scores & Ships")
+    .setDescription("Score checks are for fun, daily readings. These are separate from the member-to-member social actions.")
+    .addFields(
+      { name: "`!aura @user` • `/aura user`", value: "Show that member's daily aura score, mood, and a matching mood GIF." },
+      { name: "`!rizz @user` • `/rizz user`", value: "Show that member's daily rizz score out of 100." },
+      { name: "`!vibecheck @user` • `/vibecheck user`", value: "Show that member's daily vibe score out of 100." },
+      { name: "`!rate @user` • `/rate user`", value: "Give that member a playful daily rating out of 10." },
+      { name: "`!ship @user1 @user2` • `/ship user1 user2`", value: "Show a fun compatibility score for two different members." },
+    )
+    .setFooter({ text: HELP_FOOTER });
+}
+
 const CATEGORY_BUILDERS: Record<CategoryId, () => EmbedBuilder> = {
   start: page1,
   moderation: page2,
@@ -227,7 +248,7 @@ const CATEGORY_BUILDERS: Record<CategoryId, () => EmbedBuilder> = {
   friendly: () => socialCategory("Social: Friendly", FRIENDLY_ACTIONS),
   affection: () => socialCategory("Social: Affection", AFFECTION_ACTIONS),
   reactions: () => socialCategory("Social: Reactions", REACTION_ACTIONS),
-  scores: () => socialCategory("Scores & Ships", ["aura", "rizz", "vibecheck", "rate"], true),
+  scores: scoresCategory,
 };
 
 function buildCategoryRow(selected: CategoryId) {
