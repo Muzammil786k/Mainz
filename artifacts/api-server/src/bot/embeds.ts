@@ -27,6 +27,8 @@ import { invalidateEmbedOverrideCache } from "./presentation";
 import { setGuildMessage } from "./automation";
 
 type EditableField = "title" | "description" | "color" | "image" | "thumbnail" | "footer";
+type EditableColumn = "title" | "description" | "color" | "imageUrl" | "thumbnailUrl" | "footerText";
+type FieldValidation = { ok: true; value: string } | { ok: false; error: string };
 
 function parseColor(value: string): string | null {
   return /^#[\da-f]{6}$/i.test(value) ? value.toUpperCase() : null;
@@ -67,24 +69,26 @@ function embedFromSettings(settings: {
 function validateFieldValue(
   field: EditableField,
   value: string,
-): { value: string; error?: never } | { value?: never; error: string } {
-  if (!value.trim()) return { error: "Value cannot be empty." };
+): FieldValidation {
+  if (!value.trim()) return { ok: false, error: "Value cannot be empty." };
   if (field === "color") {
     const color = parseColor(value.trim());
-    return color ? { value: color } : { error: "Use a six-digit hex color, for example `#5865F2`." };
+    return color
+      ? { ok: true, value: color }
+      : { ok: false, error: "Use a six-digit hex color, for example `#5865F2`." };
   }
   if (field === "image" || field === "thumbnail") {
     return validUrl(value.trim())
-      ? { value: value.trim() }
-      : { error: "Use a valid `http://` or `https://` image URL." };
+      ? { ok: true, value: value.trim() }
+      : { ok: false, error: "Use a valid `http://` or `https://` image URL." };
   }
   const limit = field === "title" ? 256 : field === "footer" ? 2048 : 4096;
   return value.length <= limit
-    ? { value }
-    : { error: `${field} must be ${limit} characters or fewer.` };
+    ? { ok: true, value }
+    : { ok: false, error: `${field} must be ${limit} characters or fewer.` };
 }
 
-function toColumn(field: EditableField): string {
+function toColumn(field: EditableField): EditableColumn {
   switch (field) {
     case "title": return "title";
     case "description": return "description";
@@ -372,7 +376,7 @@ async function handleEmbedModal(interaction: ModalSubmitInteraction, action: str
       const raw = interaction.fields.getTextInputValue(inputId).trim();
       if (!raw) continue;
       const validated = validateFieldValue(field, raw);
-      if ("error" in validated) {
+      if (!validated.ok) {
         await replyToEmbedModal(interaction, validated.error);
         return;
       }
@@ -460,7 +464,7 @@ async function handleEmbedModal(interaction: ModalSubmitInteraction, action: str
       continue;
     }
     const validated = validateFieldValue(field, raw);
-    if ("error" in validated) {
+    if (!validated.ok) {
       await replyToEmbedModal(interaction, validated.error);
       return;
     }
@@ -614,7 +618,7 @@ export async function handleEmbedCommand(message: Message): Promise<void> {
       }
       const field = editMatch[2]!.toLowerCase() as EditableField;
       const validated = validateFieldValue(field, editMatch[3]!.trim());
-      if ("error" in validated) {
+      if (!validated.ok) {
         await message.reply(`❌ ${validated.error}`);
         return;
       }
