@@ -1,5 +1,4 @@
-import { EmbedBuilder, PermissionFlagsBits, type Message, type Client } from "discord.js";
-import { logCase } from "./cases";
+import { EmbedBuilder, PermissionFlagsBits, type Message } from "discord.js";
 import { premiumMessagePayload } from "./presentation";
 
 interface Warning {
@@ -14,7 +13,7 @@ function getKey(guildId: string, userId: string): string {
   return `${guildId}:${userId}`;
 }
 
-export async function handleWarn(client: Client, message: Message): Promise<void> {
+export async function handleWarn(message: Message): Promise<void> {
   if (!message.guild) return;
 
   const member = message.guild.members.cache.get(message.author.id);
@@ -26,13 +25,13 @@ export async function handleWarn(client: Client, message: Message): Promise<void
   }
 
   const args = message.content.trim().split(/\s+/).slice(1);
-  if (args.length === 0) {
+  if (args.length < 2) {
     await message.reply({
       embeds: [
         new EmbedBuilder()
           .setColor(0xff0000)
           .setTitle("Command: !warn")
-          .setDescription("**Usage:** `!warn @user [reason]`\n**Example:** `!warn @NoobLance Stop posting lewd images`"),
+          .setDescription("**Usage:** `!warn @user <reason>`\n**Example:** `!warn @NoobLance Stop posting lewd images`"),
       ],
     });
     return;
@@ -52,26 +51,18 @@ export async function handleWarn(client: Client, message: Message): Promise<void
     return;
   }
 
-  const reason = args.slice(1).join(" ") || "No reason provided";
+  const reason = args.slice(1).join(" ").trim();
+  if (reason.length > 1000) {
+    await message.reply("❌ Warning reasons must be 1000 characters or fewer.");
+    return;
+  }
 
   const key = getKey(message.guild.id, target.id);
   if (!warnings.has(key)) warnings.set(key, []);
   warnings.get(key)!.push({ reason, moderatorId: message.author.id, timestamp: Date.now() });
   const totalWarnings = warnings.get(key)!.length;
 
-  const c = await logCase(client, {
-    type: "WARN",
-    guildId: message.guild.id,
-    targetId: target.id,
-    targetTag: target.user.tag,
-    moderatorId: message.author.id,
-    reason,
-  });
-
-  await message.reply({
-    embeds: [new EmbedBuilder().setColor(0x57f287).setDescription(`✅ **${target.user.username}** has been warned. | Case **#${c.id}** | Total warnings: **${totalWarnings}**`)],
-  });
-
+  let dmSent = true;
   try {
     await target.send(premiumMessagePayload({
       embeds: [
@@ -86,7 +77,16 @@ export async function handleWarn(client: Client, message: Message): Promise<void
           .setTimestamp(),
       ],
     }, message.client?.user ?? null));
-  } catch { /* DMs closed */ }
+  } catch {
+    dmSent = false;
+  }
+
+  await message.reply({
+    embeds: [new EmbedBuilder().setColor(0x57f287).setDescription(
+      `✅ **${target.user.username}** has been warned. | Total Warnings: **${totalWarnings}**\n` +
+      (dmSent ? "A DM with the reason was sent." : "The warning was recorded, but I couldn't deliver the DM."),
+    )],
+  });
 }
 
 export async function handleWarnings(message: Message): Promise<void> {

@@ -12,7 +12,7 @@ import {
   type MessageCreateOptions,
   type VoiceState,
 } from "discord.js";
-import { and, desc, eq, gte, lte } from "drizzle-orm";
+import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
 import {
   botExperiencePreferencesTable,
   botExperienceBoostsTable,
@@ -30,6 +30,7 @@ const CHAT_XP_COOLDOWN_MS = 60_000;
 const VOICE_XP_INTERVAL_MS = 60_000;
 const MIN_CHAT_XP = 15;
 const MAX_CHAT_XP = 25;
+const CHAT_CREDIT_REWARD = 20;
 const VOICE_XP = 10;
 
 interface AwardResult {
@@ -53,9 +54,6 @@ const DEFAULT_LEVEL_UP_TITLE = "🎉 New Level Gained!";
 const DEFAULT_LEVEL_UP_DESCRIPTION =
   "✨ {user} leveled up **{levels_gained}** to **Level {level}**!";
 const DEFAULT_LEVEL_UP_COLOR = premiumColors.success;
-const LEVEL_UP_PLACEHOLDERS =
-  "`{user}`, `{username}`, `{level}`, `{levels_gained}`, `{xp}`, `{total_xp}`, `{progress}`, `{next_level_xp}`";
-
 const chatCooldowns = new Map<string, number>();
 const chatChannelAllowlistCache = new Map<string, { channelIds: string[]; expiresAt: number }>();
 const voiceJoinedAt = new Map<string, number>();
@@ -118,6 +116,19 @@ async function awardXp(
         eq(botExperienceTable.guildId, guildId),
         eq(botExperienceTable.userId, userId),
       ));
+
+    if (activity === "chat") {
+      await tx
+        .insert(botMiningProfilesTable)
+        .values({ guildId, userId, coins: CHAT_CREDIT_REWARD })
+        .onConflictDoUpdate({
+          target: [botMiningProfilesTable.guildId, botMiningProfilesTable.userId],
+          set: {
+            coins: sql<number>`${botMiningProfilesTable.coins} + ${CHAT_CREDIT_REWARD}`,
+            updatedAt: new Date(now),
+          },
+        });
+    }
 
     return {
       amount: awardedAmount,
@@ -327,243 +338,6 @@ async function awardLevelRoles(member: GuildMember, result: AwardResult): Promis
   }
 }
 
-async function saveExperienceSettings(
-  guildId: string,
-  updates: Partial<ExperienceSettings>,
-): Promise<void> {
-  await db
-    .insert(botExperienceSettingsTable)
-    .values({ guildId, ...updates })
-    .onConflictDoUpdate({
-      target: botExperienceSettingsTable.guildId,
-      set: { ...updates, updatedAt: new Date() },
-    });
-  chatChannelAllowlistCache.delete(guildId);
-}
-
-export async function handleLevelUpCommand(message: Message): Promise<void> {
-  const guild = message.guild;
-  if (!guild) return;
-  const member =
-    message.member ?? (await guild.members.fetch(message.author.id).catch(() => null));
-  if (!member?.permissions.has(PermissionFlagsBits.ManageGuild)) {
-    await message.reply("❌ You need **Manage Server** permission to change level-up settings.");
-    return;
-  }
-
-  const [, action = "help", ...args] = message.content.trim().split(/\s+/);
-  const value = args.join(" ").trim();
-  const reset = value.toLowerCase() === "reset";
-  const usage =
-    "Usage: `!levelup channel #channel|reset`, `!levelup allow #channel`, `!levelup disallow #channel`, `!levelup allowed`, `!levelup clearallowed`, `!levelup role set <level> @role`, `!levelup role remove <level>`, `!levelup role list`, `!levelup title <text|reset>`, `!levelup description <text|reset>`, `!levelup color #RRGGBB|reset`, or `!levelup status`.";
-
-  if (action.toLowerCase() === "role") {
-    const [roleAction, rawLevel] = args;
-    if (roleAction?.toLowerCase() === "list") {
-      try {
-        const mappings = await db
-          .select()
-          .from(botLevelRolesTable)
-          .where(eq(botLevelRolesTable.guildId, guild.id))
-          .orderBy(botLevelRolesTable.level);
-        await message.reply({
-          content: mappings.length
-            ? `**Level roles**\n${mappings.map(({ level, roleId }) => `Level **${level}** → <@&${roleId}>`).join("\n")}`
-            : "No level roles configured yet.",
-          allowedMentions: { parse: [] },
-        });
-      } catch (error) {
-        logger.error({ err: error, guildId: guild.id }, "Failed to load level roles");
-        await message.reply("❌ Could not load level roles. Please try again.");
-      }
-      return;
-    }
-
-    const level = Number(rawLevel);
-    if (!Number.isInteger(level) || level < 2 || level > 100_000) {
-      await message.reply(`❌ Level must be a whole number from 2 to 100,000. ${usage}`);
-      return;
-    }
-
-    if (roleAction?.toLowerCase() === "remove") {
-      try {
-        const [removed] = await db
-          .delete(botLevelRolesTable)
-          .where(and(
-            eq(botLevelRolesTable.guildId, guild.id),
-            eq(botLevelRolesTable.level, level),
-          ))
-          .returning({ roleId: botLevelRolesTable.roleId });
-        await message.reply(
-          removed
-            ? `✅ Removed the role reward for level ${level}. Members who already have that role keep it.`
-            : `ℹ️ No role reward was configured for level ${level}.`,
-        );
-      } catch (error) {
-        logger.error({ err: error, guildId: guild.id, level }, "Failed to remove level role");
-        await message.reply("❌ Could not remove that level role. Please try again.");
-      }
-      return;
-    }
-
-    if (roleAction?.toLowerCase() !== "set") {
-      await message.reply(usage);
-      return;
-    }
-    const role = message.mentions.roles.first();
-    const botMember = guild.members.me;
-    if (!role) {
-      await message.reply(`❌ Mention a role to assign. ${usage}`);
-      return;
-    }
-    if (
-      !botMember?.permissions.has(PermissionFlagsBits.ManageRoles) ||
-      role.managed ||
-      botMember.roles.highest.comparePositionTo(role) <= 0
-    ) {
-      await message.reply(
-        "❌ I need **Manage Roles**, and my highest role must be above the selected role.",
-      );
-      return;
-    }
-    try {
-      await db
-        .insert(botLevelRolesTable)
-        .values({ guildId: guild.id, level, roleId: role.id })
-        .onConflictDoUpdate({
-          target: [botLevelRolesTable.guildId, botLevelRolesTable.level],
-          set: { roleId: role.id, updatedAt: new Date() },
-        });
-      await message.reply(`✅ Members will receive ${role} when they reach level ${level}.`);
-    } catch (error) {
-      logger.error({ err: error, guildId: guild.id, level, roleId: role.id }, "Failed to set level role");
-      await message.reply("❌ Could not set that level role. Please try again.");
-    }
-    return;
-  }
-
-  if (action.toLowerCase() === "status" || action.toLowerCase() === "allowed") {
-    try {
-      const settings = await getExperienceSettings(guild.id);
-      const allowedChannels = settings.allowedChatChannelIds;
-      const channelSummary =
-        allowedChannels.length === 0
-          ? "all text channels"
-          : `${allowedChannels.slice(0, 20).map((id) => `<#${id}>`).join(", ")}${allowedChannels.length > 20 ? `, and ${allowedChannels.length - 20} more` : ""}`;
-      if (action.toLowerCase() === "allowed") {
-        await message.reply({
-          content: `Chat XP is enabled in: ${channelSummary}.`,
-          allowedMentions: { parse: [] },
-        });
-        return;
-      }
-      await message.reply({
-        content: `**Level-up settings**\nAnnouncement channel: ${settings.levelUpChannelId ? `<#${settings.levelUpChannelId}>` : "the channel where XP was earned"}\nChat XP channels: ${channelSummary}\nTitle: ${settings.embedTitle ? `${settings.embedTitle.slice(0, 200)}${settings.embedTitle.length > 200 ? "…" : ""}` : "default"}\nDescription: ${settings.embedDescription ? `${settings.embedDescription.slice(0, 600)}${settings.embedDescription.length > 600 ? "…" : ""}` : "default"}\nColor: ${settings.embedColor ?? "default"}\nLevel roles: use \`!levelup role list\` to view`,
-        allowedMentions: { parse: [] },
-      });
-    } catch (error) {
-      logger.error({ err: error, guildId: guild.id }, "Failed to load level-up settings");
-      await message.reply("❌ Could not load level-up settings. Please try again.");
-    }
-    return;
-  }
-
-  let updates: Partial<ExperienceSettings>;
-  let confirmation: string;
-  if (action.toLowerCase() === "channel") {
-    if (reset) {
-      updates = { levelUpChannelId: null };
-      confirmation = "✅ Level-up announcements will be sent where XP was earned.";
-    } else {
-      const channel = message.mentions.channels.first();
-      if (
-        !channel ||
-        (channel.type !== ChannelType.GuildText &&
-          channel.type !== ChannelType.GuildAnnouncement)
-      ) {
-        await message.reply(`❌ Mention a server text channel or use \`reset\`. ${usage}`);
-        return;
-      }
-      updates = { levelUpChannelId: channel.id };
-      confirmation = `✅ Level-up announcements will be sent to ${channel}.`;
-    }
-  } else if (action.toLowerCase() === "title" || action.toLowerCase() === "description") {
-    if (!reset && !value) {
-      await message.reply(`❌ Provide text or use \`reset\`. ${usage}\nPlaceholders: ${LEVEL_UP_PLACEHOLDERS}`);
-      return;
-    }
-    const setting = action.toLowerCase() === "title" ? "embedTitle" : "embedDescription";
-    const maxLength = setting === "embedTitle" ? 256 : 4096;
-    if (!reset && value.length > maxLength) {
-      await message.reply(`❌ ${action} must be ${maxLength} characters or fewer.`);
-      return;
-    }
-    updates = { [setting]: reset ? null : value };
-    confirmation = `✅ Level-up embed ${action} ${reset ? "reset to default" : "updated"}.`;
-  } else if (action.toLowerCase() === "color") {
-    if (!reset && !/^#?[0-9a-f]{6}$/i.test(value)) {
-      await message.reply(`❌ Use a six-digit hex color, for example \`#5865F2\`, or use \`reset\`.`);
-      return;
-    }
-    updates = { embedColor: reset ? null : `#${value.replace(/^#/, "")}` };
-    confirmation = `✅ Level-up embed color ${reset ? "reset to default" : "updated"}.`;
-  } else if (
-    action.toLowerCase() === "allow" ||
-    action.toLowerCase() === "disallow"
-  ) {
-    const mentionedChannel = message.mentions.channels.first();
-    const channel = mentionedChannel
-      ? guild.channels.cache.get(mentionedChannel.id)
-      : undefined;
-    if (
-      !channel ||
-      (channel.type !== ChannelType.GuildText &&
-        channel.type !== ChannelType.GuildAnnouncement)
-    ) {
-      await message.reply(`❌ Mention a text channel. ${usage}`);
-      return;
-    }
-    let current: string[];
-    try {
-      current = await getAllowedChatChannelIds(guild.id);
-    } catch (error) {
-      logger.error({ err: error, guildId: guild.id, action }, "Failed to load allowed XP channels");
-      await message.reply("❌ Could not load allowed XP channels. Please try again.");
-      return;
-    }
-    if (action.toLowerCase() === "allow") {
-      if (current.includes(channel.id)) {
-        await message.reply(`ℹ️ Chat XP is already enabled in ${channel}.`);
-        return;
-      }
-      updates = { allowedChatChannelIds: [...current, channel.id] };
-      confirmation = `✅ Chat XP is now enabled in ${channel}.`;
-    } else {
-      if (!current.includes(channel.id)) {
-        await message.reply(`ℹ️ Chat XP was not enabled specifically in ${channel}.`);
-        return;
-      }
-      const remainingChannelIds = current.filter((id) => id !== channel.id);
-      updates = { allowedChatChannelIds: remainingChannelIds };
-      confirmation = `✅ Chat XP is no longer enabled in ${channel}.${remainingChannelIds.length === 0 ? " With no allowed channels remaining, chat XP is enabled in all text channels." : ""}`;
-    }
-  } else if (action.toLowerCase() === "clearallowed") {
-    updates = { allowedChatChannelIds: [] };
-    confirmation = "✅ Chat XP is enabled in all text channels.";
-  } else {
-    await message.reply(`${usage}\nPlaceholders: ${LEVEL_UP_PLACEHOLDERS}`);
-    return;
-  }
-
-  try {
-    await saveExperienceSettings(guild.id, updates);
-    await message.reply(confirmation);
-  } catch (error) {
-    logger.error({ err: error, guildId: guild.id, action }, "Failed to save level-up settings");
-    await message.reply("❌ Could not update level-up settings. Please try again.");
-  }
-}
-
 type LevelProfileSection = "progress" | "credits" | "boosters" | "leaderboard";
 
 function levelProfileComponents(
@@ -711,7 +485,7 @@ export async function handleBoostersCommand(message: Message): Promise<void> {
           ? `**Activated**\n${activeBoosts.map((boost) =>
               `- **${boost.boostPercent}%** XP Boost • ${boost.source === "vote" ? "Vote reward" : "Mysterious Crate"} • Active until <t:${Math.floor(boost.expiresAt / 1000)}:R>`,
             ).join("\n")}`
-          : "**Activated**\nNone\n\nWin a Mysterious Crate or vote for the server to activate an XP boost.",
+          : "**Activated**\nNone\n\nVote for the server to activate an XP boost.",
       )
       .setFooter({ text: "Active boosts stack and apply to chat and voice XP in this server." });
     await message.reply({ embeds: [embed] });

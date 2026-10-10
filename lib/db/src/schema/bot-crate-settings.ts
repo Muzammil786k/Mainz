@@ -7,8 +7,8 @@ export const botCrateSettingsTable = pgTable("bot_crate_settings", {
   enabled: boolean("enabled").notNull().default(true),
   nextCrateAt: bigint("next_crate_at", { mode: "number" }).notNull().default(0),
   activeMessageId: text("active_message_id"),
-  activeBoostPercent: integer("active_boost_percent"),
+  activeCreditReward: integer("active_boost_percent"),
   activeExpiresAt: bigint("active_expires_at", { mode: "number" }),
-  totalCratesClaimed: integer("total_crates_claimed").notNull().default(0),
+  totalCreditDropsClaimed: integer("total_crates_claimed").notNull().default(0),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });

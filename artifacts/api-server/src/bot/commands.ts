@@ -25,32 +25,26 @@ import {
   handleBotInfo,
   handleChannelInfo,
 } from "./utility";
-import { handleSetModlog, handleCaseLookup, handleCaseList } from "./cases";
 import { handleShip, handleSocialAction, SOCIAL_ACTIONS, type SocialActionName } from "./social";
 import { handleSteal } from "./steal";
 import { handleAutoModeration, handleAutomodCommand } from "./moderation";
 import {
   handleAutoReactCommand,
-  handleGoodbyeCommand,
   handleStickyCommand,
   handleWelcomeCommand,
 } from "./automation-commands";
 import { withPremiumReplies } from "./presentation";
 import { handleJtcCommand, handleVcCommand } from "./joinToCreate";
 import { handleTicketCommand } from "./tickets";
-import { handleMiningCommand } from "./mining";
 import { handleSocialRoleCommand } from "./socialRole";
 import { handleRoleShopCommand } from "./roleShop";
 import {
   awardChatXp,
   handleBoostersCommand,
   handleLevelProfileCommand,
-  handleLevelUpCommand,
 } from "./experience";
 import { handleVoteCommand } from "./voting";
-import { checkEconomyChannel, handleEconomyChannelCommand } from "./economy-settings";
-import { handleCrateCommand } from "./crates";
-import { handleBoostMessageCommand } from "./boost-message";
+import { handleCreditDropCommand } from "./crates";
 import { handleEmbedCommand } from "./embeds";
 import { logger } from "../lib/logger";
 
@@ -86,23 +80,14 @@ export async function handleMessage(
 
   const lower = content.toLowerCase();
 
-  if (lower === "!economy" || lower.startsWith("!economy ")) {
-    await handleEconomyChannelCommand(message);
-    return;
-  }
-  if (lower === "!crate" || lower.startsWith("!crate ")) {
-    await handleCrateCommand(message);
-    return;
-  }
-  if (lower === "!boostmessage" || lower.startsWith("!boostmessage ")) {
-    await handleBoostMessageCommand(message);
+  if (lower === "!creditdrop" || lower.startsWith("!creditdrop ")) {
+    await handleCreditDropCommand(message);
     return;
   }
   if (lower === "!embed" || lower.startsWith("!embed ")) {
     await handleEmbedCommand(message);
     return;
   }
-  if (!(await checkEconomyChannel(message, content))) return;
 
   // ── Giveaway ──────────────────────────────────────────────────────────────
   if (lower === `!${PREFIX}start` || lower.startsWith(`!${PREFIX}start `)) {
@@ -123,28 +108,25 @@ export async function handleMessage(
     await handleStickyCommand(client, message);
   } else if (lower === "!welcome" || lower.startsWith("!welcome ")) {
     await handleWelcomeCommand(message);
-  } else if (lower === "!goodbye" || lower.startsWith("!goodbye ")) {
-    await handleGoodbyeCommand(message);
-
   // ── Moderation ────────────────────────────────────────────────────────────
   } else if (lower === "!automod" || lower.startsWith("!automod ")) {
     await handleAutomodCommand(message);
   } else if (lower === "!warn" || lower.startsWith("!warn ")) {
-    await handleWarn(client, message);
+    await handleWarn(message);
   } else if (lower === "!warnings" || lower.startsWith("!warnings ")) {
     await handleWarnings(message);
   } else if (lower === "!clearwarnings" || lower.startsWith("!clearwarnings ")) {
     await handleClearWarnings(message);
   } else if (lower === "!mute" || lower.startsWith("!mute ")) {
-    await handleMute(client, message);
+    await handleMute(message);
   } else if (lower === "!unmute" || lower.startsWith("!unmute ")) {
-    await handleUnmute(client, message);
+    await handleUnmute(message);
   } else if (lower === "!kick" || lower.startsWith("!kick ")) {
-    await handleKick(client, message);
+    await handleKick(message);
   } else if (lower === "!ban" || lower.startsWith("!ban ")) {
-    await handleBan(client, message);
+    await handleBan(message);
   } else if (lower === "!unban" || lower.startsWith("!unban ")) {
-    await handleUnban(client, message);
+    await handleUnban(message);
   } else if (lower === "!nuke") {
     await handleNuke(message);
   } else if (lower === "!slowmode" || lower.startsWith("!slowmode ")) {
@@ -163,14 +145,6 @@ export async function handleMessage(
     await handlePurgeBot(message);
   } else if (lower === "!noprefix" || lower.startsWith("!noprefix ")) {
     await handleNoPrefix(message);
-
-  // ── Case System ───────────────────────────────────────────────────────────
-  } else if (lower === "!setmodlog" || lower.startsWith("!setmodlog ")) {
-    await handleSetModlog(message);
-  } else if (lower === "!case" || lower.startsWith("!case ")) {
-    await handleCaseLookup(message);
-  } else if (lower === "!cases" || lower.startsWith("!cases ")) {
-    await handleCaseList(message);
 
   // ── Utility ───────────────────────────────────────────────────────────────
   } else if (lower === "!userinfo" || lower.startsWith("!userinfo ")) {
@@ -201,18 +175,9 @@ export async function handleMessage(
     await handleWordbombStop(message);
   } else if (lower === "!wbtop") {
     await handleWbTop(message);
-  } else if (lower === "!mine" || lower.startsWith("!mine ")) {
-    const args = content.split(/\s+/).slice(1);
-    await handleMiningCommand(message, args);
-  } else if (/^!(?:fish|hunt|forage|chop|explore|work|beg|crime|flip|coinflip|cf)(?:\s|$)/.test(lower)) {
-    const [subcommand = "", ...args] = content.trim().slice(1).split(/\s+/);
-    await handleMiningCommand(message, [subcommand.toLowerCase(), ...args]);
   } else if (lower === "!shop" || lower.startsWith("!shop ")) {
     const args = content.split(/\s+/).slice(1);
     await handleRoleShopCommand(message, args);
-  } else if (/^!(?:balance|bal|inventory|inv|sell|upgrade|craft|daily|quest|quests|leaderboard|top|pay|give|duel)(?:\s|$)/.test(lower)) {
-    const [subcommand = "", ...args] = content.trim().slice(1).split(/\s+/);
-    await handleMiningCommand(message, [subcommand.toLowerCase(), ...args]);
   } else if (lower === "!ship" || lower.startsWith("!ship ")) {
     await handleShip(message);
   } else if (lower === "!steal" || lower.startsWith("!steal ")) {
@@ -223,9 +188,6 @@ export async function handleMessage(
     await handleLevelProfileCommand(message);
   } else if (lower === "!boosters") {
     await handleBoostersCommand(message);
-  // ── Experience ────────────────────────────────────────────────────────────
-  } else if (lower === "!levelup" || lower.startsWith("!levelup ")) {
-    await handleLevelUpCommand(message);
   } else if (lower === "!vote" || lower.startsWith("!vote ")) {
     await handleVoteCommand(message);
 

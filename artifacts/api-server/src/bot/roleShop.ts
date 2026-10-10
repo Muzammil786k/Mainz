@@ -35,7 +35,7 @@ async function canAssignRole(member: GuildMember, role: Role): Promise<boolean> 
   return true;
 }
 
-async function refundCoins(guildId: string, userId: string, amount: number): Promise<void> {
+async function refundCredits(guildId: string, userId: string, amount: number): Promise<void> {
   await db.transaction(async (tx) => {
     await tx.insert(botMiningProfilesTable).values({ guildId, userId }).onConflictDoNothing();
     const [profile] = await tx.select().from(botMiningProfilesTable)
@@ -68,7 +68,7 @@ export async function handleRoleShopCommand(message: Message, args: string[]): P
       const role = roleId ? await guild.roles.fetch(roleId).catch(() => null) : null;
       const price = /^\d+$/.test(args[2] ?? "") ? Number.parseInt(args[2]!, 10) : 0;
       if (!role || !Number.isSafeInteger(price) || price < 1 || price > MAX_ROLE_PRICE) {
-        await message.reply("Usage: `!shop add @role <price in coins>` (example: `!shop add @VIP 50000`).");
+        await message.reply("Usage: `!shop add @role <price in credits>` (example: `!shop add @VIP 50000`).");
         return;
       }
       if (!(await canAssignRole(member, role))) {
@@ -82,7 +82,7 @@ export async function handleRoleShopCommand(message: Message, args: string[]): P
           target: [botRoleShopTable.guildId, botRoleShopTable.roleId],
           set: { price, configuredBy: message.author.id, updatedAt: new Date() },
         });
-      await message.reply(replyEmbed("Role added", `${role} is now available in the shop for **${price.toLocaleString()} coins**.`));
+      await message.reply(replyEmbed("Role added", `${role} is now available in the shop for **${price.toLocaleString()} credits**.`));
       return;
     }
 
@@ -112,7 +112,7 @@ export async function handleRoleShopCommand(message: Message, args: string[]): P
         await message.reply(replyEmbed("Role shop", `${role} isn't listed yet. Add it with \`!shop add @role <price>\`.`));
         return;
       }
-      await message.reply(replyEmbed("Role price updated", `${role} now costs **${price.toLocaleString()} coins**.`));
+      await message.reply(replyEmbed("Role price updated", `${role} now costs **${price.toLocaleString()} credits**.`));
       return;
     }
 
@@ -176,7 +176,7 @@ export async function handleRoleShopCommand(message: Message, args: string[]): P
         return;
       }
       if (purchase.status === "funds") {
-        await message.reply(replyEmbed("Insufficient coins", `This role costs **${purchase.price.toLocaleString()} coins**. Your balance is **${purchase.balance.toLocaleString()} coins**.`));
+        await message.reply(replyEmbed("Insufficient credits", `This role costs **${purchase.price.toLocaleString()} credits**. Your balance is **${purchase.balance.toLocaleString()} credits**.`));
         return;
       }
 
@@ -186,15 +186,15 @@ export async function handleRoleShopCommand(message: Message, args: string[]): P
         logger.error({ err, guildId: guild.id, userId: member.id, roleId: role.id }, "Could not assign shop role; refunding purchase");
         const refreshed = await guild.members.fetch({ user: member.id, force: true }).catch(() => null);
         if (!refreshed?.roles.cache.has(role.id)) {
-          await refundCoins(guild.id, member.id, purchase.price).catch((refundErr) => {
+          await refundCredits(guild.id, member.id, purchase.price).catch((refundErr) => {
             logger.error({ err: refundErr, guildId: guild.id, userId: member.id, roleId: role.id }, "Could not refund failed role purchase");
           });
         }
-        await message.reply(replyEmbed("Purchase failed", "I couldn't assign that role. If the purchase was not applied, your coins were refunded."));
+        await message.reply(replyEmbed("Purchase failed", "I couldn't assign that role. If the purchase was not applied, your credits were refunded."));
         return;
       }
 
-      await message.reply(replyEmbed("Role purchased", `You bought ${role} for **${purchase.price.toLocaleString()} coins**.\nRemaining balance: **${purchase.balance.toLocaleString()} coins**.`));
+      await message.reply(replyEmbed("Role purchased", `You bought ${role} for **${purchase.price.toLocaleString()} credits**.\nRemaining balance: **${purchase.balance.toLocaleString()} credits**.`));
       return;
     }
 
@@ -216,7 +216,7 @@ export async function handleRoleShopCommand(message: Message, args: string[]): P
       const buildPage = (page: number) => {
         const start = page * ROLES_PER_PAGE;
         const lines = roles.slice(start, start + ROLES_PER_PAGE).map(({ listing, role }, index) =>
-          `**${start + index + 1}.** ${role ? `${role}` : `Deleted role (${listing.roleId})`} — **${listing.price.toLocaleString()} coins**`,
+          `**${start + index + 1}.** ${role ? `${role}` : `Deleted role (${listing.roleId})`} — **${listing.price.toLocaleString()} credits**`,
         );
         const components = pageCount > 1
           ? [new ActionRowBuilder<ButtonBuilder>().addComponents(
@@ -256,7 +256,7 @@ export async function handleRoleShopCommand(message: Message, args: string[]): P
     await message.reply({
       embeds: [new EmbedBuilder().setColor(EMBED_COLOR).setTitle("Role shop commands").setDescription([
         "`!shop` — view roles for sale",
-        "`!shop buy @role` — buy a role with economy coins",
+        "`!shop buy @role` — buy a role with credits",
         "`!shop add @role <price>` — set/list a role price, e.g. `!shop add @VIP 50000` (Manage Server)",
         "`!shop edit @role <new-price>` — change an existing listing's price (Manage Server)",
         "`!shop remove @role` — remove a listing (Manage Server)",
