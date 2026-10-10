@@ -1,9 +1,12 @@
 import {
+  ChannelType,
   PermissionFlagsBits,
   type Client,
   type GuildBasedChannel,
   type Message,
 } from "discord.js";
+import { and, eq } from "drizzle-orm";
+import { botCustomEmbedsTable, db } from "@workspace/db";
 import { logger } from "../lib/logger";
 import {
   automationLimits,
@@ -48,6 +51,10 @@ function textAfterChannelMention(message: Message, channel: GuildBasedChannel): 
     : message.content.slice(mentionIndex + mention.length).trim();
 }
 
+function isSingleUnicodeEmoji(value: string): boolean {
+  return /^(?:\p{Extended_Pictographic}(?:\uFE0F|\p{Emoji_Modifier})?(?:\u200D\p{Extended_Pictographic}(?:\uFE0F|\p{Emoji_Modifier})?)*|[\u{1F1E6}-\u{1F1FF}]{2}|[0-9#*]\uFE0F?\u20E3)$/u.test(value);
+}
+
 async function saveFailure(message: Message, feature: string, error: unknown): Promise<void> {
   logger.error(
     { err: error, guildId: message.guild?.id, feature },
@@ -80,19 +87,30 @@ export async function handleAutoReactCommand(message: Message): Promise<void> {
     const emojiText = textAfterChannelMention(message, channel);
     const match = /^<a?:[A-Za-z0-9_]{2,32}:(\d{17,20})>$/.exec(emojiText);
     const emoji = match ? message.guild.emojis.cache.get(match[1]!) : undefined;
-    if (!emoji) {
+    if (!emoji && !isSingleUnicodeEmoji(emojiText)) {
       await message.reply({
         content:
-          "❌ Use one custom emoji from this server, for example `!autoreact set #chat <:sparkle:123456789012345678>`.",
+          "❌ Use one Unicode emoji or a custom emoji from this server, for example `!autoreact set #chat 👍` or `!autoreact set #chat <:sparkle:123456789012345678>`.",
+        allowedMentions: { parse: [], repliedUser: false },
+      });
+      return;
+    }
+
+    const botMember = await message.guild.members.fetchMe().catch(() => null);
+    const permissions = botMember ? channel.permissionsFor(botMember) : null;
+    if (!permissions?.has(PermissionFlagsBits.ViewChannel) || !permissions.has(PermissionFlagsBits.AddReactions)) {
+      await message.reply({
+        content: `❌ I need **View Channel** and **Add Reactions** permissions in ${channel}.`,
         allowedMentions: { parse: [], repliedUser: false },
       });
       return;
     }
 
     try {
-      await setChannelAutoReact(message.guild.id, channel.id, emoji.toString());
+      const selectedEmoji = emoji?.toString() ?? emojiText;
+      await setChannelAutoReact(message.guild.id, channel.id, selectedEmoji);
       await message.reply({
-        content: `✅ Auto-react is on in ${channel}. I’ll react to every new message with ${emoji}.`,
+        content: `✅ Auto-react is on in ${channel}. I’ll react to every new message with ${selectedEmoji}.`,
         allowedMentions: { parse: [], repliedUser: false },
       });
     } catch (error) {
@@ -156,11 +174,47 @@ export async function handleStickyCommand(
     return;
   }
 
+  if (action === "status") {
+    try {
+      const settings = await getChannelAutomationSettings(message.guild.id, channel.id);
+      await message.reply({
+        content: settings?.stickyContent
+          ? `📌 Sticky message is on in ${channel}. Current message: ${settings.stickyContent}`
+          : `ℹ️ No sticky message is configured in ${channel}.`,
+        allowedMentions: { parse: [], repliedUser: false },
+      });
+    } catch (error) {
+      await saveFailure(message, "sticky message", error);
+    }
+    return;
+  }
+
   if (action === "set") {
     const content = textAfterChannelMention(message, channel);
     if (!content || content.length > automationLimits.maxStickyContentLength) {
       await message.reply({
         content: `❌ Sticky text must be between 1 and ${automationLimits.maxStickyContentLength} characters.`,
+        allowedMentions: { parse: [], repliedUser: false },
+      });
+      return;
+    }
+
+    const botMember = await message.guild.members.fetchMe().catch(() => null);
+    const permissions = botMember ? channel.permissionsFor(botMember) : null;
+    const isThread =
+      channel.type === ChannelType.AnnouncementThread ||
+      channel.type === ChannelType.PublicThread ||
+      channel.type === ChannelType.PrivateThread;
+    const sendPermission = isThread
+      ? PermissionFlagsBits.SendMessagesInThreads
+      : PermissionFlagsBits.SendMessages;
+    if (
+      !permissions?.has(PermissionFlagsBits.ViewChannel) ||
+      !permissions.has(sendPermission) ||
+      !permissions.has(PermissionFlagsBits.EmbedLinks)
+    ) {
+      await message.reply({
+        content: `❌ I need **View Channel**, **${isThread ? "Send Messages in Threads" : "Send Messages"}**, and **Embed Links** permissions in ${channel} to keep a sticky message there.`,
         allowedMentions: { parse: [], repliedUser: false },
       });
       return;
@@ -222,6 +276,45 @@ async function handleMemberMessageCommand(
 
   const args = message.content.trim().split(/\s+/);
   const action = args[1]?.toLowerCase();
+  if (kind === "welcome" && action === "embed") {
+    const channel = mentionedTextChannel(message);
+    const embedName = (args[3] ?? "welcome").toLowerCase();
+    if (!channel || !/^[a-z0-9_-]{1,32}$/.test(embedName)) {
+      await message.reply({
+        content: "ℹ️ Usage: `!welcome embed #channel [embed-name]` (default embed name: `welcome`).",
+        allowedMentions: { parse: [], repliedUser: false },
+      });
+      return;
+    }
+
+    const [savedEmbed] = await db
+      .select({ name: botCustomEmbedsTable.name })
+      .from(botCustomEmbedsTable)
+      .where(and(
+        eq(botCustomEmbedsTable.guildId, message.guild.id),
+        eq(botCustomEmbedsTable.name, embedName),
+      ))
+      .limit(1);
+    if (!savedEmbed) {
+      await message.reply({
+        content: `❌ Embed \`${embedName}\` not found. Create it first with \`!embed create ${embedName}\`.`,
+        allowedMentions: { parse: [], repliedUser: false },
+      });
+      return;
+    }
+
+    try {
+      await setGuildMessage(message.guild.id, "welcome", channel.id, `{{embed:${embedName}}}`);
+      await message.reply({
+        content: `✅ Welcome embed \`${embedName}\` set in ${channel}. Preview or edit it with \`!embed show ${embedName}\` and \`!embed edit ${embedName} <field> <value>\`.`,
+        allowedMentions: { parse: [], repliedUser: false },
+      });
+    } catch (error) {
+      await saveFailure(message, "welcome embed", error);
+    }
+    return;
+  }
+
   if (action === "remove" || action === "disable" || action === "off") {
     try {
       const removed = await removeGuildMessage(message.guild.id, kind);

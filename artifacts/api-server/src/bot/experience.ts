@@ -12,7 +12,7 @@ import {
   type MessageCreateOptions,
   type VoiceState,
 } from "discord.js";
-import { and, desc, eq, gte, lte } from "drizzle-orm";
+import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
 import {
   botExperiencePreferencesTable,
   botExperienceBoostsTable,
@@ -30,6 +30,7 @@ const CHAT_XP_COOLDOWN_MS = 60_000;
 const VOICE_XP_INTERVAL_MS = 60_000;
 const MIN_CHAT_XP = 15;
 const MAX_CHAT_XP = 25;
+const CHAT_CREDIT_REWARD = 20;
 const VOICE_XP = 10;
 
 interface AwardResult {
@@ -118,6 +119,19 @@ async function awardXp(
         eq(botExperienceTable.guildId, guildId),
         eq(botExperienceTable.userId, userId),
       ));
+
+    if (activity === "chat") {
+      await tx
+        .insert(botMiningProfilesTable)
+        .values({ guildId, userId, coins: CHAT_CREDIT_REWARD })
+        .onConflictDoUpdate({
+          target: [botMiningProfilesTable.guildId, botMiningProfilesTable.userId],
+          set: {
+            coins: sql<number>`${botMiningProfilesTable.coins} + ${CHAT_CREDIT_REWARD}`,
+            updatedAt: new Date(now),
+          },
+        });
+    }
 
     return {
       amount: awardedAmount,
@@ -711,7 +725,7 @@ export async function handleBoostersCommand(message: Message): Promise<void> {
           ? `**Activated**\n${activeBoosts.map((boost) =>
               `- **${boost.boostPercent}%** XP Boost • ${boost.source === "vote" ? "Vote reward" : "Mysterious Crate"} • Active until <t:${Math.floor(boost.expiresAt / 1000)}:R>`,
             ).join("\n")}`
-          : "**Activated**\nNone\n\nWin a Mysterious Crate or vote for the server to activate an XP boost.",
+          : "**Activated**\nNone\n\nVote for the server to activate an XP boost.",
       )
       .setFooter({ text: "Active boosts stack and apply to chat and voice XP in this server." });
     await message.reply({ embeds: [embed] });

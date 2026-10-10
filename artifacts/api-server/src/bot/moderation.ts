@@ -7,11 +7,9 @@ import {
   PermissionFlagsBits,
   type Message,
   type TextChannel,
-  type Client,
 } from "discord.js";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { join } from "path";
-import { logCase } from "./cases";
 import { premiumEmbed, premiumMessagePayload } from "./presentation";
 
 const C = 0x2b2d31;
@@ -123,16 +121,6 @@ async function applyAutomodAction(message: Message, reason: string): Promise<voi
 
   await message.delete().catch(() => {});
 
-  const botId = message.client.user?.id ?? "bot";
-  await logCase(message.client, {
-    type: "WARN",
-    guildId: message.guild.id,
-    targetId: message.author.id,
-    targetTag: message.author.tag,
-    moderatorId: botId,
-    reason,
-  });
-
   try {
     await message.author.send({
       embeds: [
@@ -149,7 +137,7 @@ async function applyAutomodAction(message: Message, reason: string): Promise<voi
 
 // ─── Kick ──────────────────────────────────────────────────────────────────────
 
-export async function handleKick(client: Client, message: Message): Promise<void> {
+export async function handleKick(message: Message): Promise<void> {
   if (!message.guild) return;
   const mod = message.guild.members.cache.get(message.author.id);
   if (!mod?.permissions.has(PermissionFlagsBits.KickMembers)) {
@@ -176,8 +164,7 @@ export async function handleKick(client: Client, message: Message): Promise<void
       embeds: [new EmbedBuilder().setColor(C).setTitle(`🥾 You were kicked from ${message.guild.name}`).addFields({ name: "Reason", value: reason })],
     }, message.client?.user ?? null)).catch(() => {});
     await target.kick(reason);
-    const c = await logCase(client, { type: "KICK", guildId: message.guild.id, targetId: target.id, targetTag: target.user.tag, moderatorId: message.author.id, reason });
-    await message.reply({ embeds: [new EmbedBuilder().setColor(C).setDescription(`✅ **${target.user.username}** has been kicked. | Case **#${c.id}**\n**Reason:** ${reason}`)] });
+    await message.reply({ embeds: [new EmbedBuilder().setColor(C).setDescription(`✅ **${target.user.username}** has been kicked.\n**Reason:** ${reason}`)] });
   } catch {
     await message.reply({ embeds: [new EmbedBuilder().setColor(C).setDescription("❌ Failed to kick that member.")] });
   }
@@ -185,7 +172,7 @@ export async function handleKick(client: Client, message: Message): Promise<void
 
 // ─── Ban ───────────────────────────────────────────────────────────────────────
 
-export async function handleBan(client: Client, message: Message): Promise<void> {
+export async function handleBan(message: Message): Promise<void> {
   if (!message.guild) return;
   const mod = message.guild.members.cache.get(message.author.id);
   if (!mod?.permissions.has(PermissionFlagsBits.BanMembers)) {
@@ -215,8 +202,7 @@ export async function handleBan(client: Client, message: Message): Promise<void>
       reason,
       deleteMessageSeconds: 7 * 24 * 60 * 60,
     });
-    const c = await logCase(client, { type: "BAN", guildId: message.guild.id, targetId: target.id, targetTag: target.user.tag, moderatorId: message.author.id, reason });
-    await message.reply({ embeds: [new EmbedBuilder().setColor(C).setDescription(`✅ **${target.user.username}** has been banned. | Case **#${c.id}**\n**Reason:** ${reason}`)] });
+    await message.reply({ embeds: [new EmbedBuilder().setColor(C).setDescription(`✅ **${target.user.username}** has been banned.\n**Reason:** ${reason}`)] });
   } catch {
     await message.reply({ embeds: [new EmbedBuilder().setColor(C).setDescription("❌ Failed to ban that member.")] });
   }
@@ -224,7 +210,7 @@ export async function handleBan(client: Client, message: Message): Promise<void>
 
 // ─── Unban ─────────────────────────────────────────────────────────────────────
 
-export async function handleUnban(client: Client, message: Message): Promise<void> {
+export async function handleUnban(message: Message): Promise<void> {
   if (!message.guild) return;
   const mod = message.guild.members.cache.get(message.author.id);
   if (!mod?.permissions.has(PermissionFlagsBits.BanMembers)) {
@@ -241,8 +227,7 @@ export async function handleUnban(client: Client, message: Message): Promise<voi
     const ban = await message.guild.bans.fetch(userId).catch(() => null);
     const targetTag = ban?.user.tag ?? userId;
     await message.guild.bans.remove(userId);
-    const c = await logCase(client, { type: "UNBAN", guildId: message.guild.id, targetId: userId, targetTag, moderatorId: message.author.id, reason: "Manual unban" });
-    await message.reply({ embeds: [new EmbedBuilder().setColor(C).setDescription(`✅ User \`${targetTag}\` has been unbanned. | Case **#${c.id}**`)] });
+    await message.reply({ embeds: [new EmbedBuilder().setColor(C).setDescription(`✅ User \`${targetTag}\` has been unbanned.`)] });
   } catch {
     await message.reply({ embeds: [new EmbedBuilder().setColor(C).setDescription("❌ Could not unban that user. Make sure the ID is correct.")] });
   }

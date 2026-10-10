@@ -1,6 +1,12 @@
 import { and, eq } from "drizzle-orm";
+import { EmbedBuilder } from "discord.js";
 import type { Client, GuildMember, Message, PartialGuildMember } from "discord.js";
-import { db, botChannelAutomationsTable, botGuildMessagesTable } from "@workspace/db";
+import {
+  db,
+  botChannelAutomationsTable,
+  botCustomEmbedsTable,
+  botGuildMessagesTable,
+} from "@workspace/db";
 import { logger } from "../lib/logger";
 import { premiumColors, premiumEmbed } from "./presentation";
 
@@ -350,6 +356,49 @@ export async function sendMemberMessage(
       { guildId: member.guild.id, channelId },
       `${kind} message channel is unavailable`,
     );
+    return;
+  }
+
+  const customEmbedName = kind === "welcome"
+    ? /^\{\{embed:([a-z0-9_-]{1,32})\}\}$/i.exec(template)?.[1]?.toLowerCase()
+    : undefined;
+  if (customEmbedName) {
+    const [custom] = await db
+      .select()
+      .from(botCustomEmbedsTable)
+      .where(and(
+        eq(botCustomEmbedsTable.guildId, member.guild.id),
+        eq(botCustomEmbedsTable.name, customEmbedName),
+      ))
+      .limit(1);
+    if (!custom) {
+      logger.warn(
+        { guildId: member.guild.id, embedName: customEmbedName },
+        "Configured welcome embed no longer exists",
+      );
+      return;
+    }
+
+    const render = (value: string, limit: number) =>
+      renderMemberTemplate(value, member).slice(0, limit);
+    const embed = new EmbedBuilder()
+      .setTitle(custom.title ? render(custom.title, 256) : `Welcome to ${member.guild.name}`)
+      .setThumbnail(custom.thumbnailUrl ?? member.user.displayAvatarURL({ size: 256 }));
+    if (custom.description) embed.setDescription(render(custom.description, 4096));
+    if (custom.color) embed.setColor(Number.parseInt(custom.color.slice(1), 16));
+    if (custom.imageUrl) embed.setImage(custom.imageUrl);
+    if (custom.footerText) embed.setFooter({ text: render(custom.footerText, 2048) });
+    if (custom.fields?.length) {
+      embed.addFields(custom.fields.map((field) => ({
+        name: render(field.name, 256),
+        value: render(field.value, 1024),
+        ...(field.inline === undefined ? {} : { inline: field.inline }),
+      })));
+    }
+    await channel.send({
+      embeds: [embed],
+      allowedMentions: { parse: [], users: [member.id] },
+    });
     return;
   }
 

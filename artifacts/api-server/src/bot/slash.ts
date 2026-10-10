@@ -43,7 +43,7 @@ const slashCommands = [
     .setName("warn")
     .setDescription("Warn a member.")
     .addUserOption((o) => o.setName("user").setDescription("Member to warn").setRequired(true))
-    .addStringOption((o) => o.setName("reason").setDescription("Reason")),
+    .addStringOption((o) => o.setName("reason").setDescription("Reason").setRequired(true)),
   new SlashCommandBuilder()
     .setName("warnings")
     .setDescription("View a member's warnings.")
@@ -121,18 +121,6 @@ const slashCommands = [
     .setName("voice")
     .setDescription("Manage your Join to Create voice channel.")
     .addSubcommand((sub) => sub.setName("help").setDescription("Show custom voice channel commands.")),
-  new SlashCommandBuilder()
-    .setName("setmodlog")
-    .setDescription("Set the moderation log channel.")
-    .addChannelOption((o) => o.setName("channel").setDescription("Moderation log channel").addChannelTypes(ChannelType.GuildText).setRequired(true)),
-  new SlashCommandBuilder()
-    .setName("case")
-    .setDescription("Look up a moderation case.")
-    .addIntegerOption((o) => o.setName("id").setDescription("Case ID").setMinValue(1).setRequired(true)),
-  new SlashCommandBuilder()
-    .setName("cases")
-    .setDescription("View recent moderation cases.")
-    .addUserOption((o) => o.setName("user").setDescription("Optional member filter")),
   new SlashCommandBuilder()
     .setName("userinfo")
     .setDescription("View member information.")
@@ -349,14 +337,6 @@ function buildLegacyContent(interaction: ChatInputCommandInteraction): string {
     }
     case "voice":
       return `!voice ${interaction.options.getSubcommand(false) ?? "help"}`;
-    case "setmodlog": {
-      const channel = interaction.options.getChannel("channel");
-      return channel ? `!setmodlog <#${channel.id}>` : "!setmodlog";
-    }
-    case "case":
-      return `!case ${integer("id")}`;
-    case "cases":
-      return `!cases ${mentionContent(interaction, "user")}`.trim();
     case "ship":
       return `!ship ${mentionContent(interaction, "user1")} ${mentionContent(interaction, "user2")}`.trim();
     case "userinfo":

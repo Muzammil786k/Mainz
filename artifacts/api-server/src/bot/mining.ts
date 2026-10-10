@@ -745,7 +745,7 @@ export async function handleMiningCommand(message: Message, args: string[]): Pro
       const profile = await ensureProfile(guild.id, message.author.id);
       const lines = ITEMS.filter((item) => (profile.inventory[item.id] ?? 0) > 0)
         .map((item) => `**${item.name}:** ${profile.inventory[item.id]}`);
-      await message.reply({ embeds: [embed("Adventure inventory", `${inventoryLoad(profile.inventory)}/${inventoryCapacity(profile.backpackLevel)} slots used\n\n${lines.length ? lines.join("\n") : "Your inventory is empty. Try `!mine`, `!fish`, or `!hunt`."}`)] });
+      await message.reply({ embeds: [embed("Adventure inventory", `${inventoryLoad(profile.inventory)}/${inventoryCapacity(profile.backpackLevel)} slots used\n\n${lines.length ? lines.join("\n") : "Your inventory is empty."}`)] });
       return;
     }
 
@@ -924,20 +924,11 @@ export async function handleMiningCommand(message: Message, args: string[]): Pro
         .orderBy(desc(botMiningProfilesTable.coins))
         .limit(10);
       const rows = leaders.map((profile, index) => `**${index + 1}.** <@${profile.userId}> — ${profile.coins.toLocaleString()} coins`);
-      await message.reply({ embeds: [embed("Mining leaderboard", rows.length ? rows.join("\n") : "No miners yet. Use `!mine` to get started.")] });
+      await message.reply({ embeds: [embed("Mining leaderboard", rows.length ? rows.join("\n") : "No miners yet.")] });
       return;
     }
 
-    await message.reply({
-      embeds: [embed("Economy commands", [
-        "Gather: `!mine` `!fish` `!hunt` `!forage` `!chop` `!explore`",
-        "Earn: `!work` `!beg` `!crime` `!daily` `!coinflip` / `!cf <bet up to 250000> <heads|tails>`",
-        "Manage: `!balance` `!inventory` `!sell <item|all> [amount]` `!shop` `!upgrade` `!craft [tool]`",
-        "Progress: `!quest` `!leaderboard`",
-        "Players: `!pay @member <coins>` `!give @member <item> <amount>` `!duel @member [wager up to 250000]`",
-        "Use `!mine help` for details. Trades and duels require the other player's approval.",
-      ].join("\n"))],
-    });
+    await message.reply("Economy game commands are disabled. Use `!shop` to browse server roles.");
   } catch (err) {
     logger.error({ err, guildId: guild.id, userId: message.author.id, subcommand }, "Mining command failed");
     await message.reply("The mining system couldn't complete that command. Please try again.").catch(() => {});
