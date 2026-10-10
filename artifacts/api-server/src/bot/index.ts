@@ -6,6 +6,7 @@ import {
   type User,
 } from "discord.js";
 import { handleMessage } from "./commands";
+import { handleEmbedInteraction } from "./embeds";
 import { handleSlashCommand, registerSlashCommands } from "./slash";
 import { handleSocialBackButton } from "./social";
 import { giveaways, buildGiveawayEmbed } from "./giveaway";
@@ -13,10 +14,7 @@ import { handleJtcInteraction, handleVoiceStateUpdate } from "./joinToCreate";
 import { handleTicketInteraction } from "./tickets";
 import { logger } from "../lib/logger";
 import { processUserMessageAutomations, sendMemberMessage } from "./automation";
-import { startVoiceXp, trackVoiceXpState } from "./experience";
-import { setVoteClient } from "./voting";
-import { handleCrateReaction, startCrateScheduler } from "./crates";
-import { sendBoostMessage } from "./boost-message";
+import { handleCreditDropReaction, startCreditDropScheduler } from "./crates";
 
 export function createBot(): Client {
   const token = process.env["DISCORD_BOT_TOKEN"];
@@ -37,13 +35,10 @@ export function createBot(): Client {
     ],
     partials: [Partials.Message, Partials.Channel, Partials.Reaction],
   });
-  setVoteClient(client);
-
   client.once("ready", () => {
     logger.info({ tag: client.user?.tag }, "Discord bot is ready");
     client.user?.setActivity("🎉 Giveaways | !help | /help");
-    startVoiceXp(client);
-    startCrateScheduler(client);
+    startCreditDropScheduler(client);
     void registerSlashCommands(client);
   });
 
@@ -69,27 +64,24 @@ export function createBot(): Client {
     });
   });
 
-  client.on("guildMemberRemove", (member) => {
-    void sendMemberMessage(client, member, "goodbye").catch((err) => {
-      logger.error({ err, guildId: member.guild.id }, "Could not send goodbye message");
-    });
-  });
-
-  client.on("guildMemberUpdate", (oldMember, newMember) => {
-    if (oldMember.premiumSinceTimestamp !== null || newMember.premiumSinceTimestamp === null) return;
-    void sendBoostMessage(newMember).catch((err) => {
-      logger.error({ err, guildId: newMember.guild.id, userId: newMember.id }, "Could not send server boost message");
-    });
-  });
-
   client.on("voiceStateUpdate", (oldState, newState) => {
-    trackVoiceXpState(oldState, newState);
     void handleVoiceStateUpdate(client, oldState, newState).catch((err) => {
       logger.error({ err, guildId: newState.guild.id }, "Error handling voice state update");
     });
   });
 
   client.on("interactionCreate", async (interaction) => {
+    if (
+      (interaction.isButton() || interaction.isStringSelectMenu() || interaction.isModalSubmit()) &&
+      interaction.customId.startsWith("embed-ui:")
+    ) {
+      try {
+        await handleEmbedInteraction(interaction);
+      } catch (err) {
+        logger.error({ err, customId: interaction.customId }, "Error handling embed builder interaction");
+      }
+      return;
+    }
     if (interaction.isButton() && interaction.customId.startsWith("social:back:")) {
       await handleSocialBackButton(interaction);
       return;
@@ -116,7 +108,7 @@ export function createBot(): Client {
   client.on("messageReactionAdd", async (reaction: MessageReaction, user: User) => {
     try {
       if (user.bot) return;
-      await handleCrateReaction(reaction, user);
+      await handleCreditDropReaction(reaction, user);
       if (reaction.emoji.name !== "🎉") return;
 
       if (reaction.partial) await reaction.fetch();

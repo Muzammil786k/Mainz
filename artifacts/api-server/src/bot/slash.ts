@@ -43,7 +43,7 @@ const slashCommands = [
     .setName("warn")
     .setDescription("Warn a member.")
     .addUserOption((o) => o.setName("user").setDescription("Member to warn").setRequired(true))
-    .addStringOption((o) => o.setName("reason").setDescription("Reason")),
+    .addStringOption((o) => o.setName("reason").setDescription("Reason").setRequired(true)),
   new SlashCommandBuilder()
     .setName("warnings")
     .setDescription("View a member's warnings.")
@@ -109,7 +109,7 @@ const slashCommands = [
       sub
         .setName("set")
         .setDescription("Require a role for social commands.")
-        .addRoleOption((o) => o.setName("role").setDescription("Required role, such as Level 50").setRequired(true)),
+        .addRoleOption((o) => o.setName("role").setDescription("Role required to use social commands").setRequired(true)),
     )
     .addSubcommand((sub) =>
       sub.setName("status").setDescription("Show the current social-command role requirement."),
@@ -121,18 +121,6 @@ const slashCommands = [
     .setName("voice")
     .setDescription("Manage your Join to Create voice channel.")
     .addSubcommand((sub) => sub.setName("help").setDescription("Show custom voice channel commands.")),
-  new SlashCommandBuilder()
-    .setName("setmodlog")
-    .setDescription("Set the moderation log channel.")
-    .addChannelOption((o) => o.setName("channel").setDescription("Moderation log channel").addChannelTypes(ChannelType.GuildText).setRequired(true)),
-  new SlashCommandBuilder()
-    .setName("case")
-    .setDescription("Look up a moderation case.")
-    .addIntegerOption((o) => o.setName("id").setDescription("Case ID").setMinValue(1).setRequired(true)),
-  new SlashCommandBuilder()
-    .setName("cases")
-    .setDescription("View recent moderation cases.")
-    .addUserOption((o) => o.setName("user").setDescription("Optional member filter")),
   new SlashCommandBuilder()
     .setName("userinfo")
     .setDescription("View member information.")
@@ -179,7 +167,8 @@ const slashCommands = [
         .setName("set")
         .setDescription("React to every message in a channel.")
         .addChannelOption((o) => o.setName("channel").setDescription("Text channel").addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setRequired(true))
-        .addStringOption((o) => o.setName("emoji").setDescription("Custom emoji from this server").setRequired(true)),
+        .addStringOption((o) => o.setName("emoji").setDescription("Emoji to react with").setRequired(true))
+        .addStringOption((o) => o.setName("trigger").setDescription("Optional text that must appear in the message").setMaxLength(120)),
     )
     .addSubcommand((sub) =>
       sub
@@ -243,19 +232,6 @@ const slashCommands = [
       sub.setName("remove").setDescription("Turn off welcome messages."),
     ),
   new SlashCommandBuilder()
-    .setName("goodbye")
-    .setDescription("Configure server goodbye messages.")
-    .addSubcommand((sub) =>
-      sub
-        .setName("set")
-        .setDescription("Set a goodbye message and channel.")
-        .addChannelOption((o) => o.setName("channel").setDescription("Text channel").addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setRequired(true))
-        .addStringOption((o) => o.setName("message").setDescription("Message text").setMaxLength(1800).setRequired(true)),
-    )
-    .addSubcommand((sub) =>
-      sub.setName("remove").setDescription("Turn off goodbye messages."),
-    ),
-  new SlashCommandBuilder()
     .setName("wordbomb")
     .setDescription("Start a Word Bomb game."),
   new SlashCommandBuilder()
@@ -284,7 +260,7 @@ function mentionContent(interaction: ChatInputCommandInteraction, optionName: st
 
 function automationCommandContent(
   interaction: ChatInputCommandInteraction,
-  command: "autoreact" | "sticky" | "welcome" | "goodbye",
+  command: "autoreact" | "sticky" | "welcome",
 ): string {
   const action = interaction.options.getSubcommand(false) ?? "set";
   const channel = interaction.options.getChannel("channel");
@@ -293,7 +269,8 @@ function automationCommandContent(
     interaction.options.getString("emoji") ??
     interaction.options.getString("message") ??
     "";
-  return `!${command} ${action} ${channelText} ${value}`.trim();
+  const trigger = command === "autoreact" ? interaction.options.getString("trigger") ?? "" : "";
+  return `!${command} ${action} ${channelText} ${value} ${trigger}`.trim();
 }
 
 function buildLegacyContent(interaction: ChatInputCommandInteraction): string {
@@ -349,14 +326,6 @@ function buildLegacyContent(interaction: ChatInputCommandInteraction): string {
     }
     case "voice":
       return `!voice ${interaction.options.getSubcommand(false) ?? "help"}`;
-    case "setmodlog": {
-      const channel = interaction.options.getChannel("channel");
-      return channel ? `!setmodlog <#${channel.id}>` : "!setmodlog";
-    }
-    case "case":
-      return `!case ${integer("id")}`;
-    case "cases":
-      return `!cases ${mentionContent(interaction, "user")}`.trim();
     case "ship":
       return `!ship ${mentionContent(interaction, "user1")} ${mentionContent(interaction, "user2")}`.trim();
     case "userinfo":
@@ -383,7 +352,6 @@ function buildLegacyContent(interaction: ChatInputCommandInteraction): string {
     case "autoreact":
     case "sticky":
     case "welcome":
-    case "goodbye":
       return automationCommandContent(interaction, name);
     default:
       return `!${name}`;

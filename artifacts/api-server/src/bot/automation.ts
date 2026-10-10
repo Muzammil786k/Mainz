@@ -1,6 +1,12 @@
 import { and, eq } from "drizzle-orm";
+import { EmbedBuilder } from "discord.js";
 import type { Client, GuildMember, Message, PartialGuildMember } from "discord.js";
-import { db, botChannelAutomationsTable, botGuildMessagesTable } from "@workspace/db";
+import {
+  db,
+  botChannelAutomationsTable,
+  botCustomEmbedsTable,
+  botGuildMessagesTable,
+} from "@workspace/db";
 import { logger } from "../lib/logger";
 import { premiumColors, premiumEmbed } from "./presentation";
 
@@ -45,15 +51,47 @@ export async function setChannelAutoReact(
   guildId: string,
   channelId: string,
   emoji: string,
+  triggerText?: string,
 ): Promise<void> {
+  const storedEmoji = triggerText
+    ? `contains|${encodeURIComponent(triggerText)}|${emoji}`
+    : emoji;
   await db
     .insert(botChannelAutomationsTable)
-    .values({ guildId, channelId, autoReactEmoji: emoji })
+    .values({ guildId, channelId, autoReactEmoji: storedEmoji })
     .onConflictDoUpdate({
       target: [botChannelAutomationsTable.guildId, botChannelAutomationsTable.channelId],
-      set: { autoReactEmoji: emoji, updatedAt: new Date() },
+      set: { autoReactEmoji: storedEmoji, updatedAt: new Date() },
     });
   invalidateChannelSettings(guildId, channelId);
+}
+
+function parseAutoReact(value: string): { emoji: string; triggerText: string | null } | null {
+  if (value.startsWith("contains|")) {
+    const separatorIndex = value.indexOf("|", "contains|".length);
+    if (separatorIndex < 0) return null;
+    try {
+      const triggerText = decodeURIComponent(value.slice("contains|".length, separatorIndex));
+      const emoji = value.slice(separatorIndex + 1);
+      return triggerText && emoji ? { emoji, triggerText } : null;
+    } catch {
+      return null;
+    }
+  }
+  if (value.startsWith("levelup|")) {
+    const emoji = value.slice("levelup|".length);
+    return emoji ? { emoji, triggerText: "level up" } : null;
+  }
+  if (value.includes("|")) return null;
+  return { emoji: value, triggerText: null };
+}
+
+export function describeAutoReact(value: string): string | null {
+  const setting = parseAutoReact(value);
+  if (!setting) return null;
+  return setting.triggerText
+    ? `${setting.emoji} when a message contains “${setting.triggerText}”`
+    : `${setting.emoji} on every user message`;
 }
 
 export async function removeChannelAutoReact(
@@ -286,7 +324,7 @@ export async function processUserMessageAutomations(
   client: Client,
   message: Message,
 ): Promise<void> {
-  if (!message.guild || message.author.bot || message.webhookId) return;
+  if (!message.guild || message.webhookId) return;
 
   try {
     const settings = await getChannelAutomationSettings(
@@ -296,15 +334,21 @@ export async function processUserMessageAutomations(
     if (!settings) return;
 
     if (settings.autoReactEmoji) {
-      await message.react(settings.autoReactEmoji).catch((error: unknown) => {
-        logger.warn(
-          { err: error, guildId: message.guildId, channelId: message.channelId },
-          "Auto-react failed",
-        );
-      });
+      const autoReact = parseAutoReact(settings.autoReactEmoji);
+      const triggerMatches = autoReact?.triggerText
+        ? message.content.toLowerCase().includes(autoReact.triggerText.toLowerCase())
+        : autoReact !== null && !message.author.bot;
+      if (autoReact && triggerMatches) {
+        await message.react(autoReact.emoji).catch((error: unknown) => {
+          logger.warn(
+            { err: error, guildId: message.guildId, channelId: message.channelId },
+            "Auto-react failed",
+          );
+        });
+      }
     }
 
-    if (settings.stickyContent) {
+    if (settings.stickyContent && !message.author.bot) {
       await bumpStickyForChannel(client, message.guild.id, message.channelId);
     }
   } catch (error) {
@@ -350,6 +394,49 @@ export async function sendMemberMessage(
       { guildId: member.guild.id, channelId },
       `${kind} message channel is unavailable`,
     );
+    return;
+  }
+
+  const customEmbedName = kind === "welcome"
+    ? /^\{\{embed:([a-z0-9_-]{1,32})\}\}$/i.exec(template)?.[1]?.toLowerCase()
+    : undefined;
+  if (customEmbedName) {
+    const [custom] = await db
+      .select()
+      .from(botCustomEmbedsTable)
+      .where(and(
+        eq(botCustomEmbedsTable.guildId, member.guild.id),
+        eq(botCustomEmbedsTable.name, customEmbedName),
+      ))
+      .limit(1);
+    if (!custom) {
+      logger.warn(
+        { guildId: member.guild.id, embedName: customEmbedName },
+        "Configured welcome embed no longer exists",
+      );
+      return;
+    }
+
+    const render = (value: string, limit: number) =>
+      renderMemberTemplate(value, member).slice(0, limit);
+    const embed = new EmbedBuilder()
+      .setTitle(custom.title ? render(custom.title, 256) : `Welcome to ${member.guild.name}`)
+      .setThumbnail(custom.thumbnailUrl ?? member.user.displayAvatarURL({ size: 256 }));
+    if (custom.description) embed.setDescription(render(custom.description, 4096));
+    if (custom.color) embed.setColor(Number.parseInt(custom.color.slice(1), 16));
+    if (custom.imageUrl) embed.setImage(custom.imageUrl);
+    if (custom.footerText) embed.setFooter({ text: render(custom.footerText, 2048) });
+    if (custom.fields?.length) {
+      embed.addFields(custom.fields.map((field) => ({
+        name: render(field.name, 256),
+        value: render(field.value, 1024),
+        ...(field.inline === undefined ? {} : { inline: field.inline }),
+      })));
+    }
+    await channel.send({
+      embeds: [embed],
+      allowedMentions: { parse: [], users: [member.id] },
+    });
     return;
   }
 

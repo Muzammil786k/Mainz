@@ -14,11 +14,11 @@ const HELP_FOOTER = "MAINZ • Select a category below to browse commands";
 const CATEGORIES = [
   { label: "Start & Giveaways", value: "start", description: "Help and giveaway commands" },
   { label: "Moderation", value: "moderation", description: "Warnings, timeouts, kicks, and bans" },
-  { label: "Cases & Server Controls", value: "controls", description: "Cases, roles, channels, and announcements" },
-  { label: "Automation", value: "automation", description: "Auto-reactions, sticky, welcome, goodbye" },
+  { label: "Server Controls", value: "controls", description: "Roles, channels, and announcements" },
+  { label: "Automation", value: "automation", description: "Auto-reactions, sticky, and welcome" },
   { label: "Server & Utility", value: "utility", description: "Server info, members, and bot tools" },
   { label: "Games", value: "games", description: "Word Bomb and game commands" },
-  { label: "Economy", value: "economy", description: "Mining, gathering, wallet, and trading" },
+  { label: "Economy", value: "economy", description: "Browse and buy server roles" },
   { label: "Social: Friendly", value: "friendly", description: "Hugs, cheers, compliments, and more" },
   { label: "Social: Affection", value: "affection", description: "Cute and affectionate reactions" },
   { label: "Social: Reactions", value: "reactions", description: "Anime reactions and playful actions" },
@@ -51,13 +51,13 @@ function page1(): EmbedBuilder {
 function page2(): EmbedBuilder {
   return helpPage("🛡️ Moderation")
     .addFields(
-      { name: "`!warn @user [reason]` • `/warn`", value: "Warn a member, send a DM, and log a case.\n*(Manage Server)*" },
+      { name: "`!warn @user <reason>` • `/warn`", value: "Warn a member and send them a DM containing the reason.\n*(Manage Server)*" },
       { name: "`!warnings @user` • `/warnings`", value: "View a member's warnings.\n*(Manage Server)*" },
       { name: "`!clearwarnings @user` • `/clearwarnings`", value: "Clear all warnings for a member.\n*(Manage Server)*" },
       { name: "`!mute @user <duration> [reason]` • `/mute`", value: "Timeout a member. `30s` `5m` `2h` `1d`, max 28 days.\n*(Timeout Members)*" },
       { name: "`!unmute @user` • `/unmute`", value: "Remove a member timeout.\n*(Timeout Members)*" },
-      { name: "`!kick @user [reason]` • `/kick`", value: "Kick a member and log a case.\n*(Kick Members)*" },
-      { name: "`!ban @user [reason]` • `/ban`", value: "Delete the member's messages from the past 7 days, then ban them and log a case.\n*(Ban Members)*" },
+      { name: "`!kick @user [reason]` • `/kick`", value: "Kick a member.\n*(Kick Members)*" },
+      { name: "`!ban @user|<user_id> [reason]` • `/ban`", value: "Ban a server member by mention or Discord user ID; delete their messages from the past 7 days.\n*(Ban Members)*" },
       { name: "`!unban <user_id>` • `/unban`", value: "Unban a user by ID.\n*(Ban Members)*" },
       { name: "`!nuke` • `/nuke`", value: "Clone the channel and delete the old one. Confirmation required.\n*(Manage Channels)*" },
       { name: "`!slowmode <seconds>` • `/slowmode`", value: "Set slowmode from 0 to 21600 seconds.\n*(Manage Channels)*" },
@@ -66,7 +66,7 @@ function page2(): EmbedBuilder {
       { name: "`!hide [#channel]` / `!unhide [#channel]`", value: "Hide a channel from @everyone or make it visible again. Use `!unhide #channel` from another channel if hiding it removes your access.\n*(Manage Channels)*" },
       { name: "`!purge <amount>` • `/purge`", value: "Delete 1–100 recent messages.\n*(Manage Messages)*" },
       { name: "`!pb [amount]` • `/pb`", value: "Delete recent bot messages.\n*(Manage Messages)*" },
-      { name: "`!automod status`", value: "View filters and domain lists. Configure with `!automod set links on|off`; add/remove words with `!automod add|remove <word>`, and domains with `!automod blocklink|unblocklink <domain>` or `!automod allowlink|unallowlink <domain>`. Allowed domains bypass the global link filter; blocked domains are always blocked.\n*(Manage Server)*" },
+      { name: "`!automod status`", value: "View filters and domain lists. Link filtering starts **Off**; enable or disable it with `!automod set links on|off`. Add/remove words with `!automod add|remove <word>`, and domains with `!automod blocklink|unblocklink <domain>` or `!automod allowlink|unallowlink <domain>`. Allowed domains bypass the global link filter; blocked domains are always blocked.\n*(Manage Server)*" },
     )
     .setFooter({ text: HELP_FOOTER });
 }
@@ -74,15 +74,9 @@ function page2(): EmbedBuilder {
 function page3(): EmbedBuilder {
   return helpPage("⚙️ Server Controls")
     .addFields(
-      { name: "`!setmodlog #channel` • `/setmodlog`", value: "Choose where moderation cases are logged.\n*(Manage Server)*" },
-      { name: "`!case <id>` • `/case`", value: "Look up one moderation case.\n*(Manage Server)*" },
-      { name: "`!cases [@user]` • `/cases`", value: "View the 10 most recent cases, optionally filtered by member.\n*(Manage Server)*" },
       { name: "`!noprefix @role` • `/noprefix`", value: "Let a role use commands without `!`; use `remove` to disable it.\n*(Manage Server)*" },
-      { name: "`!socialrole set @role` • `/socialrole set`", value: "Require a role, such as Level 50, to use social actions like `!kiss` and `!hug`. Check `status` or clear with `remove|clear|off`.\n*(Manage Server)*" },
+      { name: "`!socialrole set @role` • `/socialrole set`", value: "Require a server role to use social actions like `!kiss` and `!hug`. Check `status` or clear with `remove|clear|off`.\n*(Manage Server)*" },
       { name: "`!role @user @role` • `/role`", value: "Add or remove a role from a member.\n*(Manage Roles)*" },
-      { name: "`!levelup channel #channel|reset`", value: "Choose where level-up announcements are sent. Control chat XP channels with `!levelup allow #channel`, `!levelup disallow #channel`, `!levelup allowed`, or `!levelup clearallowed` (no channel restrictions means all text channels). Configure role rewards with `!levelup role set <level> @role`, `!levelup role remove <level>`, and `!levelup role list`; newly reached level roles are added without removing previous rewards. Voice XP is unchanged by chat channel restrictions. Customize the embed with `!levelup title`, `!levelup description`, and `!levelup color`; use `!levelup status` to view settings. Placeholders include `{user}`, `{username}`, `{level}`, `{levels_gained}`, `{xp}`, `{total_xp}`, `{progress}`, and `{next_level_xp}`.\n*(Manage Server)*" },
-      { name: "`!lvl`", value: "Open your level profile with progress, credits, active boosters, and the server leaderboard. Buttons let you toggle server and DM level-up notifications." },
-      { name: "`!vote setup #channel <top.gg-url> <discadia-url>`", value: "Configure the vote reward channel and links. Top.gg and Discadia webhooks grant a 20% XP boost for 12 hours in the configured server. Use `!vote status` or `!vote disable`.\n*(Manage Server; webhook auth secrets must be configured on the bot host)*" },
       { name: "`!nick @user <name|reset>` • `/nick`", value: "Change or reset a member nickname.\n*(Manage Nicknames)*" },
       { name: "`!announce #channel <message>` • `/announce`", value: "Send an announcement embed to a channel.\n*(Manage Server)*" },
       { name: "`!embed`", value: "Create named embeds with title, description, hex color, images, thumbnails, footer and fields; preview with `show` and post with `send`. Customize command-response embeds separately with `!embed override`; reset with `override-reset`.\n*(Manage Server)*" },
@@ -92,7 +86,6 @@ function page3(): EmbedBuilder {
       { name: "`!ticket help` • `!ticket new|open`", value: "Show ticket help or open a private support ticket." },
       { name: "`!ticket close [reason]`", value: "Close your ticket; staff can close any ticket." },
       { name: "`!ticket setup|set|config #category` • `!ticket status`", value: "Configure or inspect the ticket category.\n*(Manage Server for setup)*" },
-      { name: "\u200b", value: "**Case types:** ⚠️ WARN • 🔇 MUTE • 🔊 UNMUTE • 🥾 KICK • 🔨 BAN • 🔓 UNBAN" },
     )
     .setFooter({ text: HELP_FOOTER });
 }
@@ -116,16 +109,15 @@ function pageAutomation(): EmbedBuilder {
   return helpPage("📡 Automation")
     .setDescription("Configure these features with **Manage Server** permission.")
     .addFields(
-      { name: "`!autoreact set #channel <:emoji:id>` • `/autoreact set`", value: "React to every new message in that channel with one custom emoji from this server." },
+      { name: "`!autoreact set #channel <emoji> [trigger text]` • `/autoreact set`", value: "With no trigger text, react to every user message. Add a phrase to react only when a user or bot message contains it, e.g. `!autoreact set #chat 🎉 \"leveled up\"`. Matching ignores letter case." },
       { name: "`!autoreact status #channel` • `/autoreact status`", value: "Show the active reaction for a channel." },
       { name: "`!autoreact remove #channel` • `/autoreact remove`", value: "Turn off auto-react for a channel." },
       { name: "`!sticky set #channel <message>` • `/sticky set`", value: "Keep one branded message at the bottom of a channel. It moves after new messages." },
+      { name: "`!sticky status #channel`", value: "Check whether a sticky message is configured in a channel." },
       { name: "`!sticky remove #channel` • `/sticky remove`", value: "Remove the sticky message and stop reposting it." },
-      { name: "`!welcome set #channel <message>` • `/welcome set`", value: "Post a branded welcome when a member joins. Use `{user}`, `{server}`, or `{memberCount}`." },
+      { name: "`!welcome set #channel <message>` • `/welcome set`", value: "Post a branded text welcome. Use `{user}`, `{server}`, or `{memberCount}`." },
+      { name: "`!welcome embed #channel [name]`", value: "Use a saved custom embed when a member joins. Create/edit it with `!embed create`, `!embed edit`, and preview with `!embed show`. The default embed name is `welcome`; placeholders are supported." },
       { name: "`!welcome remove` • `/welcome remove`", value: "Turn off welcome messages." },
-      { name: "`!goodbye set #channel <message>` • `/goodbye set`", value: "Post a branded goodbye when a member leaves. Supports the same placeholders." },
-      { name: "`!goodbye remove` • `/goodbye remove`", value: "Turn off goodbye messages." },
-      { name: "`!boostmessage set #channel`", value: "Post the perk embed when a member starts boosting. Customize with `!boostmessage title <text>` and `!boostmessage edit <description>`; use `{user}`, `{username}`, `{server}` placeholders. Restore the default embed with `!boostmessage reset`. Check with `!boostmessage status` or disable with `!boostmessage remove`.\n*(Manage Server)*" },
     )
     .setFooter({ text: HELP_FOOTER });
 }
@@ -138,21 +130,16 @@ function page5(): EmbedBuilder {
       { name: "`!wbstop` / `!wordbomb stop` • `/wbstop`", value: "Stop the current Word Bomb game.\n*(Manage Server)*" },
       { name: "`!wbtop` • `/wbtop`", value: "Show the Word Bomb win leaderboard for this server." },
       { name: "✅ **Command notes**", value: "Slash commands appear server-by-server after the bot starts. Prefix commands continue to work as before.\n\nFor accurate online/offline presence counts, enable **Server Members Intent** and **Presence Intent** in the Discord Developer Portal." },
-      { name: "📈 **Server levels**", value: "Earn **15–25 XP** from chat (once per minute) and **10 XP** per minute in an active voice channel with at least two non-bot members. AFK and self-deafened voice sessions don't earn XP. Every **100 XP** grants a level; level-up embeds appear in the channel where you earned the XP." },
+      { name: "💳 **Credits**", value: "Check your balance with `!credit`. Earn **20 credits** from chat once per minute, or win **38 Reputation** in a 30-minute reaction drop. Reputation is added to your credit balance; spend it on server roles with `!shop` and `!shop buy @role`." },
+      { name: "🦉 **Credit drops**", value: "An Epic reaction drop appears every **30 minutes**. The first 🌦️ reaction wins **38 Reputation**, added to the winner's credit balance. Server managers set the channel with `!creditdrop setup #channel`; change the interval with `!creditdrop interval 1h` (30m–24h). Check, pause, or resume with `!creditdrop status|pause|resume`." },
     )
     .setFooter({ text: HELP_FOOTER });
 }
 
 function pageEconomy(): EmbedBuilder {
   return helpPage("💰 Economy")
-    .setDescription("Economy commands can be restricted to one text channel by a server manager with `!economy set #channel`. Check with `!economy status` or remove the restriction with `!economy remove`.")
     .addFields(
-      { name: "⛏️ **Gathering games**", value: "`!mine` — ores\n`!fish` — fishing\n`!hunt` — hunting\n`!forage` — berries and herbs\n`!chop` — woodcutting\n`!explore` — find salvage and relics" },
-      { name: "💼 **Earn coins**", value: "`!work` — hourly shift\n`!beg` — ask for change\n`!crime` — risky payout\n`!coinflip` / `!cf <bet up to 250000> <heads|tails>`" },
-      { name: "🪙 **Wallet, market & crafting**", value: "`!balance` `!inventory` `!sell <item|all> [amount]`\n`!daily` — claim daily coins\n`!mine shop` `!upgrade`\n`!craft [tool]` — craft a rod, bow, sickle, axe, compass, or backpack" },
-      { name: "🏷️ **Role shop**", value: "`!shop` — browse numbered role/price pages\n`!shop buy @role` — buy with coins\n`!shop add @role <price>` — add a listing\n`!shop edit @role <new-price>` — edit its price\n`!shop remove @role` — remove a listing (**Manage Server**)" },
-      { name: "🎯 **Progress & players**", value: "`!quest` `!leaderboard`\n`!pay @member <coins>` `!give @member <item> <amount>`\n`!duel @member [wager up to 250000]`\nTransfers and duels require the other member's approval." },
-      { name: "🎁 **Mysterious Crates**", value: "React 🦉 to win a **25% XP Boost for 1 hour**. Check active boosts with `!boosters`. Server managers configure crate events with `!crate setup #channel [30m]`, change the interval with `!crate interval 1h`, inspect with `!crate status`, or pause/resume with `!crate pause|resume`." },
+      { name: "🏷️ **Role shop**", value: "`!shop` — browse numbered role/price pages\n`!shop buy @role` — buy with credits\n`!shop add @role <price>` — add a listing\n`!shop edit @role <new-price>` — edit its price\n`!shop remove @role` — remove a listing (**Manage Server**)" },
     )
     .setFooter({ text: HELP_FOOTER });
 }
