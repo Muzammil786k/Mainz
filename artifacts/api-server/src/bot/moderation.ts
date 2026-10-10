@@ -19,6 +19,7 @@ const AUTOMOD_FILE = join(DATA_DIR, "automod.json");
 interface AutomodConfig {
   invites: boolean;
   links: boolean;
+  linksConfigured?: boolean;
   mentionLimit: number;
   blacklist: string[];
   blockedDomains: string[];
@@ -27,7 +28,8 @@ interface AutomodConfig {
 
 const DEFAULT_AUTOMOD: AutomodConfig = {
   invites: true,
-  links: true,
+  links: false,
+  linksConfigured: false,
   mentionLimit: 5,
   blacklist: ["discord.gg", "freenitro", "nitrofree", "free nitro"],
   blockedDomains: [],
@@ -59,6 +61,7 @@ function getAutomodConfig(guildId: string): AutomodConfig {
   const saved = savedConfig
     ? { ...DEFAULT_AUTOMOD, ...savedConfig }
     : DEFAULT_AUTOMOD;
+  if (savedConfig && savedConfig.linksConfigured !== true) saved.links = false;
   automodConfig.set(guildId, saved);
   return saved;
 }
@@ -520,7 +523,7 @@ export async function handleAutomodCommand(message: Message): Promise<void> {
         await message.reply({ embeds: [new EmbedBuilder().setColor(C).setDescription("❌ Usage: `!automod set links on|off`")] });
         return;
       }
-      const next = { ...config, links: value === "on" };
+      const next = { ...config, links: value === "on", linksConfigured: true };
       persistAutomodConfig(message.guild.id, next);
       await message.reply({ embeds: [new EmbedBuilder().setColor(C).setDescription(`✅ Link filtering is now **${value.toUpperCase()}**.`)] });
       return;
