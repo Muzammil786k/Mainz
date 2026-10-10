@@ -14,8 +14,6 @@ import { handleJtcInteraction, handleVoiceStateUpdate } from "./joinToCreate";
 import { handleTicketInteraction } from "./tickets";
 import { logger } from "../lib/logger";
 import { processUserMessageAutomations, sendMemberMessage } from "./automation";
-import { startVoiceXp, trackVoiceXpState } from "./experience";
-import { setVoteClient } from "./voting";
 import { handleCreditDropReaction, startCreditDropScheduler } from "./crates";
 
 export function createBot(): Client {
@@ -37,12 +35,9 @@ export function createBot(): Client {
     ],
     partials: [Partials.Message, Partials.Channel, Partials.Reaction],
   });
-  setVoteClient(client);
-
   client.once("ready", () => {
     logger.info({ tag: client.user?.tag }, "Discord bot is ready");
     client.user?.setActivity("🎉 Giveaways | !help | /help");
-    startVoiceXp(client);
     startCreditDropScheduler(client);
     void registerSlashCommands(client);
   });
@@ -70,7 +65,6 @@ export function createBot(): Client {
   });
 
   client.on("voiceStateUpdate", (oldState, newState) => {
-    trackVoiceXpState(oldState, newState);
     void handleVoiceStateUpdate(client, oldState, newState).catch((err) => {
       logger.error({ err, guildId: newState.guild.id }, "Error handling voice state update");
     });

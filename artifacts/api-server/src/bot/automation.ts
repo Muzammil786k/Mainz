@@ -51,15 +51,47 @@ export async function setChannelAutoReact(
   guildId: string,
   channelId: string,
   emoji: string,
+  triggerText?: string,
 ): Promise<void> {
+  const storedEmoji = triggerText
+    ? `contains|${encodeURIComponent(triggerText)}|${emoji}`
+    : emoji;
   await db
     .insert(botChannelAutomationsTable)
-    .values({ guildId, channelId, autoReactEmoji: emoji })
+    .values({ guildId, channelId, autoReactEmoji: storedEmoji })
     .onConflictDoUpdate({
       target: [botChannelAutomationsTable.guildId, botChannelAutomationsTable.channelId],
-      set: { autoReactEmoji: emoji, updatedAt: new Date() },
+      set: { autoReactEmoji: storedEmoji, updatedAt: new Date() },
     });
   invalidateChannelSettings(guildId, channelId);
+}
+
+function parseAutoReact(value: string): { emoji: string; triggerText: string | null } | null {
+  if (value.startsWith("contains|")) {
+    const separatorIndex = value.indexOf("|", "contains|".length);
+    if (separatorIndex < 0) return null;
+    try {
+      const triggerText = decodeURIComponent(value.slice("contains|".length, separatorIndex));
+      const emoji = value.slice(separatorIndex + 1);
+      return triggerText && emoji ? { emoji, triggerText } : null;
+    } catch {
+      return null;
+    }
+  }
+  if (value.startsWith("levelup|")) {
+    const emoji = value.slice("levelup|".length);
+    return emoji ? { emoji, triggerText: "level up" } : null;
+  }
+  if (value.includes("|")) return null;
+  return { emoji: value, triggerText: null };
+}
+
+export function describeAutoReact(value: string): string | null {
+  const setting = parseAutoReact(value);
+  if (!setting) return null;
+  return setting.triggerText
+    ? `${setting.emoji} when a message contains “${setting.triggerText}”`
+    : `${setting.emoji} on every user message`;
 }
 
 export async function removeChannelAutoReact(
@@ -292,7 +324,7 @@ export async function processUserMessageAutomations(
   client: Client,
   message: Message,
 ): Promise<void> {
-  if (!message.guild || message.author.bot || message.webhookId) return;
+  if (!message.guild || message.webhookId) return;
 
   try {
     const settings = await getChannelAutomationSettings(
@@ -302,15 +334,21 @@ export async function processUserMessageAutomations(
     if (!settings) return;
 
     if (settings.autoReactEmoji) {
-      await message.react(settings.autoReactEmoji).catch((error: unknown) => {
-        logger.warn(
-          { err: error, guildId: message.guildId, channelId: message.channelId },
-          "Auto-react failed",
-        );
-      });
+      const autoReact = parseAutoReact(settings.autoReactEmoji);
+      const triggerMatches = autoReact?.triggerText
+        ? message.content.toLowerCase().includes(autoReact.triggerText.toLowerCase())
+        : autoReact !== null && !message.author.bot;
+      if (autoReact && triggerMatches) {
+        await message.react(autoReact.emoji).catch((error: unknown) => {
+          logger.warn(
+            { err: error, guildId: message.guildId, channelId: message.channelId },
+            "Auto-react failed",
+          );
+        });
+      }
     }
 
-    if (settings.stickyContent) {
+    if (settings.stickyContent && !message.author.bot) {
       await bumpStickyForChannel(client, message.guild.id, message.channelId);
     }
   } catch (error) {

@@ -21,6 +21,30 @@ function replyEmbed(title: string, description: string): { embeds: EmbedBuilder[
   return { embeds: [new EmbedBuilder().setColor(EMBED_COLOR).setTitle(title).setDescription(description)] };
 }
 
+export async function handleCreditCommand(message: Message): Promise<void> {
+  const guild = message.guild;
+  if (!guild) return;
+
+  try {
+    const [profile] = await db
+      .select({ credits: botMiningProfilesTable.coins })
+      .from(botMiningProfilesTable)
+      .where(and(
+        eq(botMiningProfilesTable.guildId, guild.id),
+        eq(botMiningProfilesTable.userId, message.author.id),
+      ))
+      .limit(1);
+    const credits = profile?.credits ?? 0;
+    await message.reply(replyEmbed(
+      "Your credits",
+        `You have **${credits.toLocaleString()} credits**. Earn more from chat and credit drops, then spend them in \`!shop\`.`,
+    ));
+  } catch (error) {
+    logger.error({ err: error, guildId: guild.id, userId: message.author.id }, "Could not load user credits");
+    await message.reply(replyEmbed("Credits unavailable", "I couldn't load your credit balance. Please try again."));
+  }
+}
+
 function parseRoleId(value: string | undefined): string | null {
   if (!value) return null;
   return /^<@&(\d{17,20})>$/.exec(value)?.[1] ?? (/^\d{17,20}$/.test(value) ? value : null);

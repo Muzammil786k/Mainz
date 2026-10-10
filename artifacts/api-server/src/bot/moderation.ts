@@ -183,29 +183,42 @@ export async function handleBan(message: Message): Promise<void> {
     return;
   }
   const args = message.content.trim().split(/\s+/).slice(1);
-  const target = message.mentions.members?.first() ?? (args[0] ? message.guild.members.cache.get(args[0]) : null);
-  if (!target) {
-    await message.reply({ embeds: [new EmbedBuilder().setColor(C).setDescription("❌ Usage: `!ban @user [reason]`")] });
+  const targetId = message.mentions.members?.first()?.id ?? args[0];
+  if (!targetId) {
+    await message.reply({ embeds: [new EmbedBuilder().setColor(C).setDescription("❌ Usage: `!ban @user|<user_id> [reason]`")] });
     return;
   }
-  if (!target.bannable) {
-    await message.reply({ embeds: [new EmbedBuilder().setColor(C).setDescription("❌ I cannot ban that member.")] });
-    return;
-  }
-  if (target.id === message.author.id) {
+  if (targetId === message.author.id) {
     await message.reply({ embeds: [new EmbedBuilder().setColor(C).setDescription("❌ You cannot ban yourself.")] });
     return;
   }
+  const target = await message.guild.members.fetch(targetId).catch(() => null);
   const reason = args.slice(1).join(" ") || "No reason provided";
+  if (!target && !/^\d{17,20}$/.test(targetId)) {
+    await message.reply({ embeds: [new EmbedBuilder().setColor(C).setDescription("❌ Mention a member or provide a valid Discord user ID. Usage: `!ban @user|<user_id> [reason]`")] });
+    return;
+  }
+  if (target && !target.bannable) {
+    await message.reply({ embeds: [new EmbedBuilder().setColor(C).setDescription("❌ I cannot ban that member.")] });
+    return;
+  }
   try {
-    await target.send(premiumMessagePayload({
-      embeds: [new EmbedBuilder().setColor(C).setTitle(`🔨 You were banned from ${message.guild.name}`).addFields({ name: "Reason", value: reason })],
-    }, message.client?.user ?? null)).catch(() => {});
-    await target.ban({
-      reason,
-      deleteMessageSeconds: 7 * 24 * 60 * 60,
-    });
-    await message.reply({ embeds: [new EmbedBuilder().setColor(C).setDescription(`✅ **${target.user.username}** has been banned.\n**Reason:** ${reason}`)] });
+    if (target) {
+      await target.send(premiumMessagePayload({
+        embeds: [new EmbedBuilder().setColor(C).setTitle(`🔨 You were banned from ${message.guild.name}`).addFields({ name: "Reason", value: reason })],
+      }, message.client?.user ?? null)).catch(() => {});
+      await target.ban({ reason, deleteMessageSeconds: 7 * 24 * 60 * 60 });
+      await message.reply({ embeds: [new EmbedBuilder().setColor(C).setDescription(`✅ **${target.user.username}** has been banned.\n**Reason:** ${reason}`)] });
+      return;
+    }
+
+    const existingBan = await message.guild.bans.fetch(targetId).catch(() => null);
+    if (existingBan) {
+      await message.reply({ embeds: [new EmbedBuilder().setColor(C).setDescription(`ℹ️ User \`${targetId}\` is already banned.`)] });
+      return;
+    }
+    await message.guild.bans.create(targetId, { reason, deleteMessageSeconds: 7 * 24 * 60 * 60 });
+    await message.reply({ embeds: [new EmbedBuilder().setColor(C).setDescription(`✅ User ID \`${targetId}\` has been banned.\n**Reason:** ${reason}`)] });
   } catch {
     await message.reply({ embeds: [new EmbedBuilder().setColor(C).setDescription("❌ Failed to ban that member.")] });
   }

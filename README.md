@@ -31,14 +31,10 @@ The bot needs the Manage Channels and Move Members permissions, and the Guild Vo
 
 The bot service must remain running continuously because Discord bots require a long-lived process.
 
-## Server XP and levels
+## Credits
 
-Members earn 15–25 random XP from chat, at most once per minute, and 10 XP per minute while in a voice channel with at least two active, non-bot members. AFK-channel and self/server-deafened voice sessions do not earn XP. Every 100 XP grants a level; progress is stored per server and user.
+Members earn 20 credits from chat once per minute. Use `!credit` to check the server balance.
 
-Level-up announcements are sent in the channel where XP is earned. Members can view their progress, credits, active boosters, and the server XP leaderboard with `!lvl`. The profile buttons also toggle that member's server and DM level-up notifications.
-
-Vote rewards can be configured for one server with `!vote setup #channel <top.gg-vote-url> <discadia-vote-url>`. Each accepted vote from a member of that server adds a 20% XP boost for 12 hours, applicable to chat and voice XP in the configured server. Re-votes from the same provider are accepted at most once per 12 hours; votes on both sites can extend the active boost. Set strong, private `TOPGG_WEBHOOK_AUTH` and `DISCADIA_WEBHOOK_AUTH` secrets on the bot host, then configure `https://<your-service-domain>/api/webhooks/topgg` and `https://<your-service-domain>/api/webhooks/discadia` with the matching authorization header in each provider's webhook dashboard. On Railway, use the service's public domain for `<your-service-domain>`. Use `!vote status` and `!vote disable` to inspect or turn off vote rewards.
-
-Credit drops appear in the configured chat every 30 minutes. The first 🦉 reaction wins 100 credits to spend in `!shop`. Server managers configure the channel with `!creditdrop setup #channel`; use `!creditdrop status`, `!creditdrop pause`, and `!creditdrop resume` to manage drops.
+Credit drops appear in the configured chat every 30 minutes. The first 🌦️ reaction wins 38 Reputation, which is added to the same balance shown by `!credit` and spent in `!shop`. Server managers configure the channel with `!creditdrop setup #channel`, then set the cadence with `!creditdrop interval 1h` (30 minutes to 24 hours). Use `!creditdrop status`, `!creditdrop pause`, and `!creditdrop resume` to manage drops.
 
 Server managers can create reusable custom embeds with `!embed new <name>`, set content with `!embed edit <name> <title|description|color|image|thumbnail|footer> <value>`, add fields with `!embed field <name> add <field name>|<value>|[inline]`, preview with `!embed show <name>`, and send with `!embed send <name> #channel`. Use `!embed list` to see saved embeds; `!embed clear <name> <field>` clears one setting. Hex colors must use `#RRGGBB`; image and thumbnail values must be HTTP(S) URLs. Existing command-response embeds can be customized by command, for example `!embed override ban color #5865F2`, then previewed with `!embed override-show ban`. Use `!embed override-clear ban color` to clear one override or `!embed override-reset ban` to restore that command's defaults. `!embed` lists the full syntax.

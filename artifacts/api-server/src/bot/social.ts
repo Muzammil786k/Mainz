@@ -583,9 +583,43 @@ const GIFS_PER_REQUEST = 20;
 const GIF_POOL_BATCHES = 3;
 const GIF_POOL_REFILL_THRESHOLD = 5;
 const RECENT_GIF_HISTORY = 100;
+const RELATED_GIF_CATEGORIES: Record<string, string[]> = {
+  bite: ["bite", "nom", "feed", "kiss"],
+  blush: ["blush", "kiss", "wink", "handhold"],
+  bonk: ["bonk", "pat", "punch", "slap"],
+  clap: ["clap", "highfive", "dance", "happy"],
+  cuddle: ["cuddle", "hug", "handhold", "pat"],
+  cry: ["cry", "pout", "facepalm", "hug"],
+  dance: ["dance", "clap", "happy", "smile"],
+  facepalm: ["facepalm", "shrug", "stare", "think"],
+  feed: ["feed", "nom", "bite", "happy"],
+  handhold: ["handhold", "hug", "cuddle", "kiss"],
+  happy: ["happy", "smile", "cheer", "clap"],
+  highfive: ["highfive", "clap", "wave", "dance"],
+  hug: ["hug", "cuddle", "pat", "handhold"],
+  kick: ["kick", "yeet", "punch", "slap"],
+  kiss: ["kiss", "handhold", "blush", "cuddle"],
+  laugh: ["laugh", "smile", "happy", "shrug"],
+  nom: ["nom", "feed", "bite", "happy"],
+  pat: ["pat", "boop", "hug", "cuddle"],
+  poke: ["poke", "boop", "pat", "slap"],
+  pout: ["pout", "blush", "cry", "smile"],
+  punch: ["punch", "slap", "kick", "bonk"],
+  shrug: ["shrug", "facepalm", "stare", "think"],
+  slap: ["slap", "punch", "bonk", "kick"],
+  smile: ["smile", "happy", "wink", "wave"],
+  smug: ["smug", "stare", "wink", "think"],
+  stare: ["stare", "smug", "think", "facepalm"],
+  think: ["think", "stare", "shrug", "smug"],
+  tickle: ["tickle", "poke", "cuddle", "hug"],
+  wave: ["wave", "smile", "highfive", "wink"],
+  wink: ["wink", "smile", "blush", "smug"],
+  yeet: ["yeet", "kick", "punch", "slap", "bonk"],
+};
 const recentGifUrlsByCategory = new Map<string, Set<string>>();
 const gifPoolsByCategory = new Map<string, (NekoGifResult & { url: string })[]>();
 const gifPoolLoadsByCategory = new Map<string, Promise<void>>();
+const gifSourceOffsetsByCategory = new Map<string, number>();
 
 async function refillGifPool(category: string): Promise<void> {
   const pool = gifPoolsByCategory.get(category) ?? [];
@@ -598,9 +632,13 @@ async function refillGifPool(category: string): Promise<void> {
   }
 
   const load = (async () => {
+    const sourceCategories = RELATED_GIF_CATEGORIES[category] ?? [category];
+    const sourceOffset = gifSourceOffsetsByCategory.get(category) ?? 0;
+    gifSourceOffsetsByCategory.set(category, (sourceOffset + GIF_POOL_BATCHES) % sourceCategories.length);
     const batches = await Promise.allSettled(
-      Array.from({ length: GIF_POOL_BATCHES }, async () => {
-        const endpoint = new URL(`https://nekos.best/api/v2/${category}`);
+      Array.from({ length: GIF_POOL_BATCHES }, async (_, index) => {
+        const sourceCategory = sourceCategories[(sourceOffset + index) % sourceCategories.length]!;
+        const endpoint = new URL(`https://nekos.best/api/v2/${sourceCategory}`);
         endpoint.searchParams.set("amount", String(GIFS_PER_REQUEST));
         const response = await fetch(endpoint, {
           headers: {
@@ -610,7 +648,7 @@ async function refillGifPool(category: string): Promise<void> {
           signal: AbortSignal.timeout(5_000),
         });
         if (!response.ok) {
-          throw new Error(`Anime GIF service returned HTTP ${response.status}`);
+          throw new Error(`Anime GIF service returned HTTP ${response.status} for ${sourceCategory}`);
         }
         const data = (await response.json()) as NekoGifResponse;
         return data.results ?? [];
@@ -624,7 +662,10 @@ async function refillGifPool(category: string): Promise<void> {
         if (typeof result.url !== "string" || knownUrls.has(result.url)) continue;
         try {
           const url = new URL(result.url);
-          if (url.protocol !== "https:" || url.hostname !== "nekos.best") continue;
+          if (
+            url.protocol !== "https:" ||
+            (url.hostname !== "nekos.best" && !url.hostname.endsWith(".nekos.best"))
+          ) continue;
           pool.push({ ...result, url: url.href });
           knownUrls.add(url.href);
         } catch {

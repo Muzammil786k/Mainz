@@ -57,7 +57,7 @@ function page2(): EmbedBuilder {
       { name: "`!mute @user <duration> [reason]` • `/mute`", value: "Timeout a member. `30s` `5m` `2h` `1d`, max 28 days.\n*(Timeout Members)*" },
       { name: "`!unmute @user` • `/unmute`", value: "Remove a member timeout.\n*(Timeout Members)*" },
       { name: "`!kick @user [reason]` • `/kick`", value: "Kick a member.\n*(Kick Members)*" },
-      { name: "`!ban @user [reason]` • `/ban`", value: "Delete the member's messages from the past 7 days, then ban them.\n*(Ban Members)*" },
+      { name: "`!ban @user|<user_id> [reason]` • `/ban`", value: "Ban a server member by mention or Discord user ID; delete their messages from the past 7 days.\n*(Ban Members)*" },
       { name: "`!unban <user_id>` • `/unban`", value: "Unban a user by ID.\n*(Ban Members)*" },
       { name: "`!nuke` • `/nuke`", value: "Clone the channel and delete the old one. Confirmation required.\n*(Manage Channels)*" },
       { name: "`!slowmode <seconds>` • `/slowmode`", value: "Set slowmode from 0 to 21600 seconds.\n*(Manage Channels)*" },
@@ -75,10 +75,8 @@ function page3(): EmbedBuilder {
   return helpPage("⚙️ Server Controls")
     .addFields(
       { name: "`!noprefix @role` • `/noprefix`", value: "Let a role use commands without `!`; use `remove` to disable it.\n*(Manage Server)*" },
-      { name: "`!socialrole set @role` • `/socialrole set`", value: "Require a role, such as Level 50, to use social actions like `!kiss` and `!hug`. Check `status` or clear with `remove|clear|off`.\n*(Manage Server)*" },
+      { name: "`!socialrole set @role` • `/socialrole set`", value: "Require a server role to use social actions like `!kiss` and `!hug`. Check `status` or clear with `remove|clear|off`.\n*(Manage Server)*" },
       { name: "`!role @user @role` • `/role`", value: "Add or remove a role from a member.\n*(Manage Roles)*" },
-      { name: "`!lvl`", value: "Open your level profile with progress, credits, active boosters, and the server leaderboard. Buttons let you toggle server and DM level-up notifications." },
-      { name: "`!vote setup #channel <top.gg-url> <discadia-url>`", value: "Configure the vote reward channel and links. Top.gg and Discadia webhooks grant a 20% XP boost for 12 hours in the configured server. Use `!vote status` or `!vote disable`.\n*(Manage Server; webhook auth secrets must be configured on the bot host)*" },
       { name: "`!nick @user <name|reset>` • `/nick`", value: "Change or reset a member nickname.\n*(Manage Nicknames)*" },
       { name: "`!announce #channel <message>` • `/announce`", value: "Send an announcement embed to a channel.\n*(Manage Server)*" },
       { name: "`!embed`", value: "Create named embeds with title, description, hex color, images, thumbnails, footer and fields; preview with `show` and post with `send`. Customize command-response embeds separately with `!embed override`; reset with `override-reset`.\n*(Manage Server)*" },
@@ -111,7 +109,7 @@ function pageAutomation(): EmbedBuilder {
   return helpPage("📡 Automation")
     .setDescription("Configure these features with **Manage Server** permission.")
     .addFields(
-      { name: "`!autoreact set #channel <emoji>` • `/autoreact set`", value: "React to every new message with one Unicode emoji, such as `👍`, or a custom emoji from this server, such as `<:sparkle:id>`." },
+      { name: "`!autoreact set #channel <emoji> [trigger text]` • `/autoreact set`", value: "With no trigger text, react to every user message. Add a phrase to react only when a user or bot message contains it, e.g. `!autoreact set #chat 🎉 \"leveled up\"`. Matching ignores letter case." },
       { name: "`!autoreact status #channel` • `/autoreact status`", value: "Show the active reaction for a channel." },
       { name: "`!autoreact remove #channel` • `/autoreact remove`", value: "Turn off auto-react for a channel." },
       { name: "`!sticky set #channel <message>` • `/sticky set`", value: "Keep one branded message at the bottom of a channel. It moves after new messages." },
@@ -132,9 +130,8 @@ function page5(): EmbedBuilder {
       { name: "`!wbstop` / `!wordbomb stop` • `/wbstop`", value: "Stop the current Word Bomb game.\n*(Manage Server)*" },
       { name: "`!wbtop` • `/wbtop`", value: "Show the Word Bomb win leaderboard for this server." },
       { name: "✅ **Command notes**", value: "Slash commands appear server-by-server after the bot starts. Prefix commands continue to work as before.\n\nFor accurate online/offline presence counts, enable **Server Members Intent** and **Presence Intent** in the Discord Developer Portal." },
-      { name: "📈 **Server levels**", value: "Earn **15–25 XP** from chat (once per minute) and **10 XP** per minute in an active voice channel with at least two non-bot members. AFK and self-deafened voice sessions don't earn XP. Every **100 XP** grants a level; level-up embeds appear in the channel where you earned the XP." },
-      { name: "💳 **Chat credits**", value: "Earn **20 credits** when chat activity earns XP (once per minute). Spend credits on server roles with `!shop` and `!shop buy @role`." },
-      { name: "🦉 **Credit drops**", value: "A reaction drop appears every **30 minutes**. The first reaction wins **100 credits**. Server managers set the channel with `!creditdrop setup #channel`; check, pause, or resume with `!creditdrop status|pause|resume`." },
+      { name: "💳 **Credits**", value: "Check your balance with `!credit`. Earn **20 credits** from chat once per minute, or win **38 Reputation** in a 30-minute reaction drop. Reputation is added to your credit balance; spend it on server roles with `!shop` and `!shop buy @role`." },
+      { name: "🦉 **Credit drops**", value: "An Epic reaction drop appears every **30 minutes**. The first 🌦️ reaction wins **38 Reputation**, added to the winner's credit balance. Server managers set the channel with `!creditdrop setup #channel`; change the interval with `!creditdrop interval 1h` (30m–24h). Check, pause, or resume with `!creditdrop status|pause|resume`." },
     )
     .setFooter({ text: HELP_FOOTER });
 }

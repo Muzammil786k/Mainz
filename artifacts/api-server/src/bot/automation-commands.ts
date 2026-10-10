@@ -11,6 +11,7 @@ import { logger } from "../lib/logger";
 import {
   automationLimits,
   bumpStickyForChannel,
+  describeAutoReact,
   getChannelAutomationSettings,
   removeChannelAutoReact,
   removeChannelSticky,
@@ -77,20 +78,30 @@ export async function handleAutoReactCommand(message: Message): Promise<void> {
   if (!channel) {
     await message.reply({
       content:
-        "❌ Mention a text channel. Usage: `!autoreact set #channel <:emoji:id>`, `!autoreact remove #channel`, or `!autoreact status #channel`.",
+        "❌ Mention a text channel. Usage: `!autoreact set #channel <emoji> [trigger text]`, `!autoreact remove #channel`, or `!autoreact status #channel`.",
       allowedMentions: { parse: [], repliedUser: false },
     });
     return;
   }
 
   if (action === "set") {
-    const emojiText = textAfterChannelMention(message, channel);
+    const [emojiText = "", ...triggerParts] = textAfterChannelMention(message, channel).split(/\s+/);
+    const rawTrigger = triggerParts.join(" ").trim();
+    const quotedTrigger = /^(?:"([\s\S]*)"|'([\s\S]*)')$/.exec(rawTrigger);
+    const triggerText = (quotedTrigger?.[1] ?? quotedTrigger?.[2] ?? rawTrigger).trim();
+    if (triggerText.length > 120) {
+      await message.reply({
+        content: "❌ Auto-react trigger text must be 120 characters or fewer.",
+        allowedMentions: { parse: [], repliedUser: false },
+      });
+      return;
+    }
     const match = /^<a?:[A-Za-z0-9_]{2,32}:(\d{17,20})>$/.exec(emojiText);
     const emoji = match ? message.guild.emojis.cache.get(match[1]!) : undefined;
     if (!emoji && !isSingleUnicodeEmoji(emojiText)) {
       await message.reply({
         content:
-          "❌ Use one Unicode emoji or a custom emoji from this server, for example `!autoreact set #chat 👍` or `!autoreact set #chat <:sparkle:123456789012345678>`.",
+          "❌ Use one Unicode emoji or a custom emoji from this server, for example `!autoreact set #chat 👍` or `!autoreact set #chat 🎉 \"level up\"`.",
         allowedMentions: { parse: [], repliedUser: false },
       });
       return;
@@ -108,9 +119,11 @@ export async function handleAutoReactCommand(message: Message): Promise<void> {
 
     try {
       const selectedEmoji = emoji?.toString() ?? emojiText;
-      await setChannelAutoReact(message.guild.id, channel.id, selectedEmoji);
+      await setChannelAutoReact(message.guild.id, channel.id, selectedEmoji, triggerText || undefined);
       await message.reply({
-        content: `✅ Auto-react is on in ${channel}. I’ll react to every new message with ${selectedEmoji}.`,
+        content: triggerText
+          ? `✅ I’ll react with ${selectedEmoji} in ${channel} when a message contains “${triggerText}”.`
+          : `✅ Auto-react is on in ${channel}. I’ll react to every new user message with ${selectedEmoji}.`,
         allowedMentions: { parse: [], repliedUser: false },
       });
     } catch (error) {
@@ -137,9 +150,12 @@ export async function handleAutoReactCommand(message: Message): Promise<void> {
   if (action === "status") {
     try {
       const settings = await getChannelAutomationSettings(message.guild.id, channel.id);
+      const autoReact = settings?.autoReactEmoji
+        ? describeAutoReact(settings.autoReactEmoji)
+        : null;
       await message.reply({
-        content: settings?.autoReactEmoji
-          ? `✨ Auto-react is on in ${channel} with ${settings.autoReactEmoji}.`
+        content: autoReact
+          ? `✨ Auto-react is on in ${channel}: ${autoReact}.`
           : `ℹ️ Auto-react is off in ${channel}.`,
         allowedMentions: { parse: [], repliedUser: false },
       });
@@ -151,7 +167,7 @@ export async function handleAutoReactCommand(message: Message): Promise<void> {
 
   await message.reply({
     content:
-      "ℹ️ Usage: `!autoreact set #channel <:emoji:id>`, `!autoreact remove #channel`, or `!autoreact status #channel`.",
+      "ℹ️ Usage: `!autoreact set #channel <emoji> [trigger text]`, `!autoreact remove #channel`, or `!autoreact status #channel`.",
     allowedMentions: { parse: [], repliedUser: false },
   });
 }

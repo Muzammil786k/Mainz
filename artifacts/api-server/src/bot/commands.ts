@@ -37,13 +37,8 @@ import { withPremiumReplies } from "./presentation";
 import { handleJtcCommand, handleVcCommand } from "./joinToCreate";
 import { handleTicketCommand } from "./tickets";
 import { handleSocialRoleCommand } from "./socialRole";
-import { handleRoleShopCommand } from "./roleShop";
-import {
-  awardChatXp,
-  handleBoostersCommand,
-  handleLevelProfileCommand,
-} from "./experience";
-import { handleVoteCommand } from "./voting";
+import { handleCreditCommand, handleRoleShopCommand } from "./roleShop";
+import { awardChatCredits } from "./credits";
 import { handleCreditDropCommand } from "./crates";
 import { handleEmbedCommand } from "./embeds";
 import { logger } from "../lib/logger";
@@ -66,12 +61,7 @@ export async function handleMessage(
   if (!options.skipAutoModeration && await handleAutoModeration(message)) return;
 
   if (!content.startsWith("!")) {
-    void awardChatXp(message).catch((err: unknown) => {
-      logger.error(
-        { err, guildId: message.guild?.id, userId: message.author.id },
-        "Failed to award chat XP",
-      );
-    });
+    void awardChatCredits(message);
   }
 
   await handleAfk(message, content);
@@ -175,6 +165,8 @@ export async function handleMessage(
     await handleWordbombStop(message);
   } else if (lower === "!wbtop") {
     await handleWbTop(message);
+  } else if (lower === "!credit") {
+    await handleCreditCommand(message);
   } else if (lower === "!shop" || lower.startsWith("!shop ")) {
     const args = content.split(/\s+/).slice(1);
     await handleRoleShopCommand(message, args);
@@ -182,14 +174,6 @@ export async function handleMessage(
     await handleShip(message);
   } else if (lower === "!steal" || lower.startsWith("!steal ")) {
     await handleSteal(message);
-
-  // ── Experience and voting ─────────────────────────────────────────────────
-  } else if (lower === "!lvl" || lower === "!level") {
-    await handleLevelProfileCommand(message);
-  } else if (lower === "!boosters") {
-    await handleBoostersCommand(message);
-  } else if (lower === "!vote" || lower.startsWith("!vote ")) {
-    await handleVoteCommand(message);
 
   // ── Voice (Join to Create) ────────────────────────────────────────────────
   } else if (lower === "!voice" || lower.startsWith("!voice ")) {

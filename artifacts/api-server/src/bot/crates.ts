@@ -20,22 +20,25 @@ const MIN_INTERVAL_MINUTES = 30;
 const MAX_INTERVAL_MINUTES = 24 * 60;
 const CRATE_LIFETIME_MS = 10 * 60_000;
 const SCHEDULER_INTERVAL_MS = 30_000;
-const REACTION = "🦉";
-const CREDIT_REWARD = 100;
+const REACTION = "🌦️";
+const CREDIT_REWARD = 38;
 
 let scheduler: NodeJS.Timeout | undefined;
 let schedulerRunning = false;
 
 function creditDropEmbed(expiresAt: number): EmbedBuilder {
   return new EmbedBuilder()
-    .setColor(0x2b8a70)
+    .setColor(0x9b59b6)
     .setTitle("A Credit Drop Has Appeared!")
     .setDescription(
-      `React with ${REACTION} to claim **${CREDIT_REWARD} credits**.\n\n` +
-      "The first valid reaction wins.\n" +
-      `This drop expires <t:${Math.floor(expiresAt / 1000)}:R>.`,
+      `<:click:1558393065616707674> **React** to this message with the emoji below to win!\n\n` +
+      `<:reaction:1558393068254666785> **Reaction:** ${REACTION}\n\n` +
+      "<:trophy:1558393071224365102> **First valid reaction wins!**\n\n" +
+      "<:epic:1558393073204076607> **Rarity:** Epic\n" +
+      `<:reward:1558393075829702726> **Reward:** ${CREDIT_REWARD} Reputation\n` +
+      `<:time:1558393079851917372> **Expires:** <t:${Math.floor(expiresAt / 1000)}:R>`,
     )
-    .setFooter({ text: "Credits are added to your server balance for !shop." });
+    .setFooter({ text: "Reputation is added to your !credit balance and can be spent in !shop." });
 }
 
 function parseInterval(value: string | undefined): number | null {
@@ -153,9 +156,7 @@ export async function handleCreditDropCommand(message: Message): Promise<void> {
       await db.update(botCrateSettingsTable)
         .set({
           intervalMinutes,
-          nextCrateAt: settings.activeMessageId
-            ? settings.nextCrateAt
-            : now + intervalMinutes * 60_000,
+          nextCrateAt: now + intervalMinutes * 60_000,
           updatedAt: new Date(now),
         })
         .where(eq(botCrateSettingsTable.guildId, guild.id));
@@ -341,16 +342,16 @@ export async function handleCreditDropReaction(reaction: MessageReaction, user: 
     .replace(/@/g, "@\u200b");
   try {
     await reaction.message.reply({
-      content: `🎉 <@${user.id}> was first! You won **${result.credits} credits**. Your new balance is **${result.balance.toLocaleString()} credits**.`,
+      content: `🎉 <@${user.id}> was first! You won **${result.credits} Reputation**, added to your credit balance. Your new balance is **${result.balance.toLocaleString()} credits**.`,
       allowedMentions: { users: [user.id] },
     });
     await reaction.message.edit({
       embeds: [
         new EmbedBuilder()
-          .setColor(0x2b8a70)
+          .setColor(0x9b59b6)
           .setTitle("Credit Drop Claimed!")
           .setDescription(
-            `Congratulations ${displayName}! <@${user.id}> earned **${result.credits} credits**.\n\n` +
+            `Congratulations ${displayName}! <@${user.id}> earned **${result.credits} Reputation**.\n\n` +
             `New balance: **${result.balance.toLocaleString()} credits**\n` +
             `Total drops claimed: **${result.totalCreditDropsClaimed.toLocaleString()}**\n\n` +
             "Spend credits in the server role shop with `!shop`.",
