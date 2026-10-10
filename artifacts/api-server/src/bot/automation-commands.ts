@@ -358,7 +358,3 @@ async function handleMemberMessageCommand(
 export function handleWelcomeCommand(message: Message): Promise<void> {
   return handleMemberMessageCommand(message, "welcome");
 }
-
-export function handleGoodbyeCommand(message: Message): Promise<void> {
-  return handleMemberMessageCommand(message, "goodbye");
-}

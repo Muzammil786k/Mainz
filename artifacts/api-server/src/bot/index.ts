@@ -69,12 +69,6 @@ export function createBot(): Client {
     });
   });
 
-  client.on("guildMemberRemove", (member) => {
-    void sendMemberMessage(client, member, "goodbye").catch((err) => {
-      logger.error({ err, guildId: member.guild.id }, "Could not send goodbye message");
-    });
-  });
-
   client.on("voiceStateUpdate", (oldState, newState) => {
     trackVoiceXpState(oldState, newState);
     void handleVoiceStateUpdate(client, oldState, newState).catch((err) => {

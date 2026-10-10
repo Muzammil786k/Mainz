@@ -231,19 +231,6 @@ const slashCommands = [
       sub.setName("remove").setDescription("Turn off welcome messages."),
     ),
   new SlashCommandBuilder()
-    .setName("goodbye")
-    .setDescription("Configure server goodbye messages.")
-    .addSubcommand((sub) =>
-      sub
-        .setName("set")
-        .setDescription("Set a goodbye message and channel.")
-        .addChannelOption((o) => o.setName("channel").setDescription("Text channel").addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setRequired(true))
-        .addStringOption((o) => o.setName("message").setDescription("Message text").setMaxLength(1800).setRequired(true)),
-    )
-    .addSubcommand((sub) =>
-      sub.setName("remove").setDescription("Turn off goodbye messages."),
-    ),
-  new SlashCommandBuilder()
     .setName("wordbomb")
     .setDescription("Start a Word Bomb game."),
   new SlashCommandBuilder()
@@ -272,7 +259,7 @@ function mentionContent(interaction: ChatInputCommandInteraction, optionName: st
 
 function automationCommandContent(
   interaction: ChatInputCommandInteraction,
-  command: "autoreact" | "sticky" | "welcome" | "goodbye",
+  command: "autoreact" | "sticky" | "welcome",
 ): string {
   const action = interaction.options.getSubcommand(false) ?? "set";
   const channel = interaction.options.getChannel("channel");
@@ -363,7 +350,6 @@ function buildLegacyContent(interaction: ChatInputCommandInteraction): string {
     case "autoreact":
     case "sticky":
     case "welcome":
-    case "goodbye":
       return automationCommandContent(interaction, name);
     default:
       return `!${name}`;

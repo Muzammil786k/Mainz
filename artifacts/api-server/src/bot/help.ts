@@ -15,7 +15,7 @@ const CATEGORIES = [
   { label: "Start & Giveaways", value: "start", description: "Help and giveaway commands" },
   { label: "Moderation", value: "moderation", description: "Warnings, timeouts, kicks, and bans" },
   { label: "Server Controls", value: "controls", description: "Roles, channels, and announcements" },
-  { label: "Automation", value: "automation", description: "Auto-reactions, sticky, welcome, goodbye" },
+  { label: "Automation", value: "automation", description: "Auto-reactions, sticky, and welcome" },
   { label: "Server & Utility", value: "utility", description: "Server info, members, and bot tools" },
   { label: "Games", value: "games", description: "Word Bomb and game commands" },
   { label: "Economy", value: "economy", description: "Browse and buy server roles" },
@@ -120,8 +120,6 @@ function pageAutomation(): EmbedBuilder {
       { name: "`!welcome set #channel <message>` • `/welcome set`", value: "Post a branded text welcome. Use `{user}`, `{server}`, or `{memberCount}`." },
       { name: "`!welcome embed #channel [name]`", value: "Use a saved custom embed when a member joins. Create/edit it with `!embed create`, `!embed edit`, and preview with `!embed show`. The default embed name is `welcome`; placeholders are supported." },
       { name: "`!welcome remove` • `/welcome remove`", value: "Turn off welcome messages." },
-      { name: "`!goodbye set #channel <message>` • `/goodbye set`", value: "Post a branded goodbye when a member leaves. Supports the same placeholders." },
-      { name: "`!goodbye remove` • `/goodbye remove`", value: "Turn off goodbye messages." },
     )
     .setFooter({ text: HELP_FOOTER });
 }

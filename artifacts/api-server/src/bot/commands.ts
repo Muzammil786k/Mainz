@@ -30,7 +30,6 @@ import { handleSteal } from "./steal";
 import { handleAutoModeration, handleAutomodCommand } from "./moderation";
 import {
   handleAutoReactCommand,
-  handleGoodbyeCommand,
   handleStickyCommand,
   handleWelcomeCommand,
 } from "./automation-commands";
@@ -109,9 +108,6 @@ export async function handleMessage(
     await handleStickyCommand(client, message);
   } else if (lower === "!welcome" || lower.startsWith("!welcome ")) {
     await handleWelcomeCommand(message);
-  } else if (lower === "!goodbye" || lower.startsWith("!goodbye ")) {
-    await handleGoodbyeCommand(message);
-
   // ── Moderation ────────────────────────────────────────────────────────────
   } else if (lower === "!automod" || lower.startsWith("!automod ")) {
     await handleAutomodCommand(message);
