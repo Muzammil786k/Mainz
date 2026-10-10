@@ -10,36 +10,32 @@ import {
 import { and, eq, isNotNull, isNull } from "drizzle-orm";
 import {
   botCrateSettingsTable,
-  botExperienceBoostsTable,
+  botMiningProfilesTable,
   db,
 } from "@workspace/db";
 import { logger } from "../lib/logger";
 
 const DEFAULT_INTERVAL_MINUTES = 30;
-const MIN_INTERVAL_MINUTES = 10;
+const MIN_INTERVAL_MINUTES = 30;
 const MAX_INTERVAL_MINUTES = 24 * 60;
 const CRATE_LIFETIME_MS = 10 * 60_000;
 const SCHEDULER_INTERVAL_MS = 30_000;
 const REACTION = "🦉";
-const BOOST_PERCENT = 25;
-const BOOST_DURATION_MS = 60 * 60_000;
+const CREDIT_REWARD = 100;
 
 let scheduler: NodeJS.Timeout | undefined;
 let schedulerRunning = false;
 
-function crateEmbed(expiresAt: number): EmbedBuilder {
+function creditDropEmbed(expiresAt: number): EmbedBuilder {
   return new EmbedBuilder()
-    .setColor(0x9b59b6)
-    .setTitle("A Mysterious Crate Has Appeared!")
+    .setColor(0x2b8a70)
+    .setTitle("A Credit Drop Has Appeared!")
     .setDescription(
-      `<:click:1338116032237273108> **React** to this message with the emoji below to win!\n\n` +
-      `<:reaction:1537503043417940109> **Reaction:** ${REACTION}\n` +
-      "<:trophy:1479487961178575058> **First valid reaction wins!**\n\n" +
-      "<:rare:1388718237975690> **Rarity:** Rare\n" +
-      `<:boosters:1389543657136455772> **Reward:** ${BOOST_PERCENT}% XP Boost (**1h**)\n` +
-      `<:time:1347194611575160923> **Expires:** <t:${Math.floor(expiresAt / 1000)}:R>`,
+      `React with ${REACTION} to claim **${CREDIT_REWARD} credits**.\n\n` +
+      "The first valid reaction wins.\n" +
+      `This drop expires <t:${Math.floor(expiresAt / 1000)}:R>.`,
     )
-    .setFooter({ text: "One winner • Good luck!" });
+    .setFooter({ text: "Credits are added to your server balance for !shop." });
 }
 
 function parseInterval(value: string | undefined): number | null {
@@ -55,7 +51,7 @@ function parseInterval(value: string | undefined): number | null {
     : null;
 }
 
-async function getCrateSettings(guildId: string) {
+async function getCreditDropSettings(guildId: string) {
   const [settings] = await db
     .select()
     .from(botCrateSettingsTable)
@@ -63,13 +59,13 @@ async function getCrateSettings(guildId: string) {
   return settings;
 }
 
-export async function handleCrateCommand(message: Message): Promise<void> {
+export async function handleCreditDropCommand(message: Message): Promise<void> {
   const guild = message.guild;
   if (!guild) return;
   const member =
     message.member ?? (await guild.members.fetch(message.author.id).catch(() => null));
   if (!member?.permissions.has(PermissionFlagsBits.ManageGuild)) {
-    await message.reply("❌ You need **Manage Server** permission to configure crate events.");
+    await message.reply("❌ You need **Manage Server** permission to configure credit drops.");
     return;
   }
 
@@ -77,11 +73,11 @@ export async function handleCrateCommand(message: Message): Promise<void> {
   const normalizedAction = action.toLowerCase();
   try {
     if (normalizedAction === "status") {
-      const settings = await getCrateSettings(guild.id);
+      const settings = await getCreditDropSettings(guild.id);
       await message.reply(
         settings
-          ? `**Crate event settings**\nChannel: <#${settings.channelId}>\nInterval: ${settings.intervalMinutes} minutes\nStatus: ${settings.enabled ? "enabled" : "paused"}\nNext crate: ${settings.enabled ? `<t:${Math.floor(settings.nextCrateAt / 1000)}:R>` : "paused"}\nActive crate: ${settings.activeMessageId ? `<#${settings.channelId}> (expires <t:${Math.floor((settings.activeExpiresAt ?? 0) / 1000)}:R>)` : "none"}\nTotal claimed: ${settings.totalCratesClaimed.toLocaleString()}`
-          : "Crate events are not configured. Use `!crate setup #channel [30m]`.",
+          ? `**Credit drop settings**\nChannel: <#${settings.channelId}>\nInterval: ${settings.intervalMinutes} minutes\nStatus: ${settings.enabled ? "enabled" : "paused"}\nNext drop: ${settings.enabled ? `<t:${Math.floor(settings.nextCrateAt / 1000)}:R>` : "paused"}\nActive drop: ${settings.activeMessageId ? `<#${settings.channelId}> (expires <t:${Math.floor((settings.activeExpiresAt ?? 0) / 1000)}:R>)` : "none"}\nTotal claimed: ${settings.totalCreditDropsClaimed.toLocaleString()}`
+          : "Credit drops are not configured. Use `!creditdrop setup #channel`.",
       );
       return;
     }
@@ -90,7 +86,7 @@ export async function handleCrateCommand(message: Message): Promise<void> {
       const mentioned = message.mentions.channels.first();
       const channel = mentioned ? guild.channels.cache.get(mentioned.id) : undefined;
       if (!channel || channel.type !== ChannelType.GuildText) {
-        await message.reply("Usage: `!crate setup #text-channel [30m]`.");
+        await message.reply("Usage: `!creditdrop setup #text-channel [30m]`.");
         return;
       }
       const intervalArgument = args.find((argument) => argument !== `<#${channel.id}>`);
@@ -101,8 +97,19 @@ export async function handleCrateCommand(message: Message): Promise<void> {
         await message.reply(`❌ Interval must be ${MIN_INTERVAL_MINUTES}m–24h, for example \`30m\` or \`2h\`.`);
         return;
       }
-      const existing = await getCrateSettings(guild.id);
+      const existing = await getCreditDropSettings(guild.id);
       const now = Date.now();
+      if (existing?.activeMessageId) {
+        const previousChannel = await guild.channels.fetch(existing.channelId).catch(() => null);
+        const previousDrop = previousChannel?.isTextBased()
+          ? await previousChannel.messages.fetch(existing.activeMessageId).catch(() => null)
+          : null;
+        if (previousDrop?.author.id === message.client.user?.id) {
+          await previousDrop.delete().catch((error: unknown) => {
+            logger.warn({ err: error, guildId: guild.id, messageId: existing.activeMessageId }, "Could not remove the previous scheduled drop");
+          });
+        }
+      }
       await db
         .insert(botCrateSettingsTable)
         .values({
@@ -118,14 +125,15 @@ export async function handleCrateCommand(message: Message): Promise<void> {
             channelId: channel.id,
             intervalMinutes,
             enabled: true,
-            nextCrateAt: existing?.activeMessageId
-              ? existing.nextCrateAt
-              : now + intervalMinutes * 60_000,
+            nextCrateAt: now + intervalMinutes * 60_000,
+            activeMessageId: null,
+            activeCreditReward: null,
+            activeExpiresAt: null,
             updatedAt: new Date(now),
           },
         });
       await message.reply(
-        `✅ Crate events are enabled in ${channel}, every ${intervalMinutes} minutes. The first crate appears after that interval.`,
+        `✅ Credit drops are enabled in ${channel}, every ${intervalMinutes} minutes. The first drop appears after that interval.`,
       );
       return;
     }
@@ -133,12 +141,12 @@ export async function handleCrateCommand(message: Message): Promise<void> {
     if (normalizedAction === "interval") {
       const intervalMinutes = parseInterval(args[0]);
       if (!intervalMinutes) {
-        await message.reply(`Usage: \`!crate interval 30m\` (allowed: ${MIN_INTERVAL_MINUTES}m–24h).`);
+        await message.reply(`Usage: \`!creditdrop interval 30m\` (allowed: ${MIN_INTERVAL_MINUTES}m–24h).`);
         return;
       }
-      const settings = await getCrateSettings(guild.id);
+      const settings = await getCreditDropSettings(guild.id);
       if (!settings) {
-        await message.reply("❌ Configure a channel first with `!crate setup #channel [30m]`.");
+        await message.reply("❌ Configure a channel first with `!creditdrop setup #channel`.");
         return;
       }
       const now = Date.now();
@@ -151,15 +159,15 @@ export async function handleCrateCommand(message: Message): Promise<void> {
           updatedAt: new Date(now),
         })
         .where(eq(botCrateSettingsTable.guildId, guild.id));
-      await message.reply(`✅ Crate event interval set to ${intervalMinutes} minutes.`);
+      await message.reply(`✅ Credit drop interval set to ${intervalMinutes} minutes.`);
       return;
     }
 
     if (normalizedAction === "pause" || normalizedAction === "resume") {
       const enabled = normalizedAction === "resume";
-      const settings = await getCrateSettings(guild.id);
+      const settings = await getCreditDropSettings(guild.id);
       if (!settings) {
-        await message.reply("❌ Configure a channel first with `!crate setup #channel [30m]`.");
+        await message.reply("❌ Configure a channel first with `!creditdrop setup #channel`.");
         return;
       }
       await db.update(botCrateSettingsTable)
@@ -171,33 +179,33 @@ export async function handleCrateCommand(message: Message): Promise<void> {
           updatedAt: new Date(),
         })
         .where(eq(botCrateSettingsTable.guildId, guild.id));
-      await message.reply(`✅ Crate events ${enabled ? "resumed" : "paused"}.`);
+      await message.reply(`✅ Credit drops ${enabled ? "resumed" : "paused"}.`);
       return;
     }
 
-    await message.reply("Usage: `!crate setup #channel [30m]`, `!crate interval 30m`, `!crate status`, `!crate pause`, or `!crate resume`.");
+    await message.reply("Usage: `!creditdrop setup #channel [30m]`, `!creditdrop interval 30m`, `!creditdrop status`, `!creditdrop pause`, or `!creditdrop resume`.");
   } catch (error) {
-    logger.error({ err: error, guildId: guild.id, action: normalizedAction }, "Crate settings command failed");
-    await message.reply("❌ Could not update crate event settings. Please try again.");
+    logger.error({ err: error, guildId: guild.id, action: normalizedAction }, "Credit drop settings command failed");
+    await message.reply("❌ Could not update credit drop settings. Please try again.");
   }
 }
 
-async function spawnCrate(
+async function spawnCreditDrop(
   client: Client,
   settings: typeof botCrateSettingsTable.$inferSelect,
 ): Promise<void> {
   const channel = await client.channels.fetch(settings.channelId);
   if (!channel || channel.type !== ChannelType.GuildText || !channel.isSendable()) {
-    throw new Error(`Configured crate channel ${settings.channelId} is unavailable or not a text channel`);
+    throw new Error(`Configured credit drop channel ${settings.channelId} is unavailable or not a text channel`);
   }
   const expiresAt = Date.now() + CRATE_LIFETIME_MS;
-  const message = await channel.send({ embeds: [crateEmbed(expiresAt)] });
+  const message = await channel.send({ embeds: [creditDropEmbed(expiresAt)] });
   try {
     await message.react(REACTION);
     await db.update(botCrateSettingsTable)
       .set({
         activeMessageId: message.id,
-        activeBoostPercent: BOOST_PERCENT,
+        activeCreditReward: CREDIT_REWARD,
         activeExpiresAt: expiresAt,
         updatedAt: new Date(),
       })
@@ -222,7 +230,7 @@ async function runScheduler(client: Client): Promise<void> {
         await db.update(botCrateSettingsTable)
           .set({
             activeMessageId: null,
-            activeBoostPercent: null,
+            activeCreditReward: null,
             activeExpiresAt: null,
             updatedAt: new Date(now),
           })
@@ -246,9 +254,9 @@ async function runScheduler(client: Client): Promise<void> {
       if (!claimed) continue;
 
       try {
-        await spawnCrate(client, settings);
+        await spawnCreditDrop(client, settings);
       } catch (error) {
-        logger.error({ err: error, guildId: settings.guildId, channelId: settings.channelId }, "Could not spawn scheduled crate");
+        logger.error({ err: error, guildId: settings.guildId, channelId: settings.channelId }, "Could not spawn scheduled credit drop");
       }
     }
   } finally {
@@ -256,24 +264,25 @@ async function runScheduler(client: Client): Promise<void> {
   }
 }
 
-export function startCrateScheduler(client: Client): void {
+export function startCreditDropScheduler(client: Client): void {
   if (scheduler) return;
   scheduler = setInterval(() => {
     void runScheduler(client).catch((error: unknown) => {
-      logger.error({ err: error }, "Crate event scheduler failed");
+      logger.error({ err: error }, "Credit drop scheduler failed");
     });
   }, SCHEDULER_INTERVAL_MS);
   scheduler.unref();
   void runScheduler(client).catch((error: unknown) => {
-    logger.error({ err: error }, "Initial crate event scheduler run failed");
+    logger.error({ err: error }, "Initial credit drop scheduler run failed");
   });
 }
 
-export async function handleCrateReaction(reaction: MessageReaction, user: User): Promise<void> {
+export async function handleCreditDropReaction(reaction: MessageReaction, user: User): Promise<void> {
   if (user.bot || reaction.emoji.name !== REACTION) return;
   if (reaction.partial) await reaction.fetch();
   if (reaction.message.partial) await reaction.message.fetch();
   if (!reaction.message.guild) return;
+  if (!reaction.message.embeds.some((embed) => embed.title === "A Credit Drop Has Appeared!")) return;
 
   const now = Date.now();
   const result = await db.transaction(async (tx) => {
@@ -288,61 +297,43 @@ export async function handleCrateReaction(reaction: MessageReaction, user: User)
       .for("update");
     if (
       !settings ||
-      !settings.activeBoostPercent ||
+      !settings.activeCreditReward ||
       !settings.activeExpiresAt ||
       settings.activeExpiresAt <= now
     ) {
       return null;
     }
 
-    await tx.insert(botExperienceBoostsTable)
-      .values({
-        guildId: settings.guildId,
-        userId: user.id,
-        source: "crate",
-        boostPercent: settings.activeBoostPercent,
-        expiresAt: now,
-      })
+    await tx.insert(botMiningProfilesTable)
+      .values({ guildId: settings.guildId, userId: user.id })
       .onConflictDoNothing();
-    const [existingBoost] = await tx.select().from(botExperienceBoostsTable)
+    const [profile] = await tx.select({ coins: botMiningProfilesTable.coins })
+      .from(botMiningProfilesTable)
       .where(and(
-        eq(botExperienceBoostsTable.guildId, settings.guildId),
-        eq(botExperienceBoostsTable.userId, user.id),
-        eq(botExperienceBoostsTable.source, "crate"),
+        eq(botMiningProfilesTable.guildId, settings.guildId),
+        eq(botMiningProfilesTable.userId, user.id),
       ))
       .for("update");
-    const boostUntil = Math.max(now, existingBoost?.expiresAt ?? 0) + BOOST_DURATION_MS;
-    await tx.insert(botExperienceBoostsTable)
-      .values({
-        guildId: settings.guildId,
-        userId: user.id,
-        source: "crate",
-        boostPercent: settings.activeBoostPercent,
-        expiresAt: boostUntil,
-      })
-      .onConflictDoUpdate({
-        target: [
-          botExperienceBoostsTable.guildId,
-          botExperienceBoostsTable.userId,
-          botExperienceBoostsTable.source,
-        ],
-        set: {
-          boostPercent: settings.activeBoostPercent,
-          expiresAt: boostUntil,
-          updatedAt: new Date(now),
-        },
-      });
-    const totalCratesClaimed = settings.totalCratesClaimed + 1;
+    if (!profile) throw new Error("Could not load credit balance for drop winner");
+    const credits = settings.activeCreditReward;
+    const balance = profile.coins + credits;
+    await tx.update(botMiningProfilesTable)
+      .set({ coins: balance, updatedAt: new Date(now) })
+      .where(and(
+        eq(botMiningProfilesTable.guildId, settings.guildId),
+        eq(botMiningProfilesTable.userId, user.id),
+      ));
+    const totalCreditDropsClaimed = settings.totalCreditDropsClaimed + 1;
     await tx.update(botCrateSettingsTable)
       .set({
         activeMessageId: null,
-        activeBoostPercent: null,
+        activeCreditReward: null,
         activeExpiresAt: null,
-        totalCratesClaimed,
+        totalCreditDropsClaimed,
         updatedAt: new Date(now),
       })
       .where(eq(botCrateSettingsTable.guildId, settings.guildId));
-    return { boostUntil, totalCratesClaimed };
+    return { credits, balance, totalCreditDropsClaimed };
   });
 
   if (!result) return;
@@ -350,19 +341,19 @@ export async function handleCrateReaction(reaction: MessageReaction, user: User)
     .replace(/@/g, "@\u200b");
   try {
     await reaction.message.reply({
-      content: `🎉 <@${user.id}> was first! You won a **${BOOST_PERCENT}% XP Boost** for **1 hour** from the Mysterious Crate.`,
+      content: `🎉 <@${user.id}> was first! You won **${result.credits} credits**. Your new balance is **${result.balance.toLocaleString()} credits**.`,
       allowedMentions: { users: [user.id] },
     });
     await reaction.message.edit({
       embeds: [
         new EmbedBuilder()
-          .setColor(0x9b59b6)
-          .setTitle("Mysterious Crate Claimed!")
+          .setColor(0x2b8a70)
+          .setTitle("Credit Drop Claimed!")
           .setDescription(
-            `Congratulations ${displayName}! <:rare:1388718237975690> <@${user.id}> received ` +
-            `<:boosters:1389543657136455772> **${BOOST_PERCENT}% XP Boost** (**1h**)!\n\n` +
-            `<a:gift:1386036054909517924> Total Crates Claimed: **\`${result.totalCratesClaimed.toLocaleString()}\`**\n\n` +
-            "Check your boosters with `!boosters`.",
+            `Congratulations ${displayName}! <@${user.id}> earned **${result.credits} credits**.\n\n` +
+            `New balance: **${result.balance.toLocaleString()} credits**\n` +
+            `Total drops claimed: **${result.totalCreditDropsClaimed.toLocaleString()}**\n\n` +
+            "Spend credits in the server role shop with `!shop`.",
           )
           .setTimestamp(),
       ],

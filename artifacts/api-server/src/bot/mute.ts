@@ -1,5 +1,4 @@
-import { EmbedBuilder, PermissionFlagsBits, type Message, type Client } from "discord.js";
-import { logCase } from "./cases";
+import { EmbedBuilder, PermissionFlagsBits, type Message } from "discord.js";
 
 function parseDuration(input: string): number | null {
   const match = input.match(/^(\d+)(s|m|h|d)$/i);
@@ -10,7 +9,7 @@ function parseDuration(input: string): number | null {
   return value * multipliers[unit];
 }
 
-export async function handleMute(client: Client, message: Message): Promise<void> {
+export async function handleMute(message: Message): Promise<void> {
   if (!message.guild) return;
 
   const member = message.guild.members.cache.get(message.author.id);
@@ -72,21 +71,12 @@ export async function handleMute(client: Client, message: Message): Promise<void
     return;
   }
 
-  const c = await logCase(client, {
-    type: "MUTE",
-    guildId: message.guild.id,
-    targetId: target.id,
-    targetTag: target.user.tag,
-    moderatorId: message.author.id,
-    reason: `${reason} (${durationLabel})`,
-  });
-
   await message.reply({
-    embeds: [new EmbedBuilder().setColor(0x57f287).setDescription(`✅ **${target.user.username}** muted for **${durationLabel}**. | Case **#${c.id}**\n**Reason:** ${reason}`)],
+    embeds: [new EmbedBuilder().setColor(0x57f287).setDescription(`✅ **${target.user.username}** muted for **${durationLabel}**.\n**Reason:** ${reason}`)],
   });
 }
 
-export async function handleUnmute(client: Client, message: Message): Promise<void> {
+export async function handleUnmute(message: Message): Promise<void> {
   if (!message.guild) return;
 
   const member = message.guild.members.cache.get(message.author.id);
@@ -109,16 +99,7 @@ export async function handleUnmute(client: Client, message: Message): Promise<vo
     return;
   }
 
-  const c = await logCase(client, {
-    type: "UNMUTE",
-    guildId: message.guild.id,
-    targetId: target.id,
-    targetTag: target.user.tag,
-    moderatorId: message.author.id,
-    reason: "Manual unmute",
-  });
-
   await message.reply({
-    embeds: [new EmbedBuilder().setColor(0xff0000).setDescription(`✅ **${target.user.username}** has been unmuted. | Case **#${c.id}**`)],
+    embeds: [new EmbedBuilder().setColor(0xff0000).setDescription(`✅ **${target.user.username}** has been unmuted.`)],
   });
 }
